@@ -17,9 +17,9 @@ main{min-height:100vh}.screen{display:none;min-height:100vh}.screen.active{displ
 @media(max-width:900px){.privacy-pill{display:none}.upload-screen{padding:55px 14px 50px}.drop-grid{grid-template-columns:1fr}.swap-button{margin:-2px auto;transform:rotate(90deg)}.trust-strip{grid-template-columns:1fr}.workspace-screen{height:auto;padding:8px}.workspace-summary{grid-template-columns:auto 1fr auto}.summary-stats{display:none}.workspace-grid{height:auto;display:flex;flex-direction:column}.chat-pane{height:540px;border-right:0;border-bottom:1px solid var(--line)}.document-pane{height:680px}.metric-grid{grid-template-columns:1fr 1fr}.trace-row{grid-template-columns:1fr 1.4fr .6fr}.trace-row span:last-child{display:none}}@media(max-width:560px){.upload-hero h1{font-size:42px}.format-row{flex-wrap:wrap}.upload-glass{padding:13px}.drop-zone{height:220px}.upload-footer{align-items:flex-end;gap:12px}.security-note{max-width:150px}.primary-button{gap:8px;padding:0 12px}.workspace-summary{height:auto;padding:8px}.new-button span,.workspace-actions .privacy-pill{display:none}.document-pair{max-width:52vw}.document-tabs{padding:0}.document-tab{padding:7px 4px}.analysis-card{padding:45px 25px}}
 
 /* Unified review workspace */
-.workspace-screen{padding:10px;height:100vh;min-height:680px}
+.workspace-screen{padding:0;height:100vh;min-height:680px}
 .workspace-screen.active{display:block}
-.workspace-shell{height:calc(100vh - 20px);min-height:660px;border-radius:24px;display:grid;grid-template-columns:228px minmax(0,1fr);overflow:hidden;transition:grid-template-columns .24s cubic-bezier(.2,.8,.2,1);box-shadow:0 28px 80px rgba(42,70,106,.16),inset 0 1px 0 rgba(255,255,255,.92)}
+.workspace-shell{height:100vh;min-height:680px;border:0;border-radius:0;display:grid;grid-template-columns:228px minmax(0,1fr);overflow:hidden;transition:grid-template-columns .24s cubic-bezier(.2,.8,.2,1);box-shadow:none}
 .workspace-shell.sidebar-collapsed{grid-template-columns:70px minmax(0,1fr)}
 .workspace-sidebar{min-width:0;min-height:0;padding:14px 12px 13px;display:flex;flex-direction:column;border-right:1px solid rgba(78,104,137,.13);background:linear-gradient(175deg,rgba(250,252,255,.82),rgba(235,244,255,.6));overflow:hidden}
 .sidebar-brand{height:48px;display:flex;align-items:center;gap:10px;padding:0 3px 12px;border-bottom:1px solid var(--line)}
@@ -118,8 +118,8 @@ main{min-height:100vh}.screen{display:none;min-height:100vh}.screen.active{displ
   .workspace-grid{grid-template-columns:minmax(340px,38%) minmax(0,1fr)}
 }
 @media(max-width:900px){
-  .workspace-screen{height:auto;min-height:100vh;padding:7px}
-  .workspace-shell,.workspace-shell.sidebar-collapsed{height:auto;min-height:0;grid-template-columns:1fr;border-radius:18px}
+  .workspace-screen{height:auto;min-height:100vh;padding:0}
+  .workspace-shell,.workspace-shell.sidebar-collapsed{height:auto;min-height:100vh;grid-template-columns:1fr;border-radius:0}
   .workspace-sidebar{height:64px;padding:8px 10px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;border-right:0;border-bottom:1px solid var(--line);overflow:visible}
   .sidebar-brand{height:auto;padding:0;border:0;justify-content:flex-start!important}
   .workspace-shell .brand-mark{display:grid}
