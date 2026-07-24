@@ -1,0 +1,17 @@
+.git
+.github
+.tools
+.venv
+.agents
+.playwright-mcp
+.env
+artifacts
+tests
+eval
+scripts
+services
+data/eval
+tmp
+__pycache__
+*.pyc
+*.png

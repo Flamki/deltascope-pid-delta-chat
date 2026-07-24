@@ -11,8 +11,18 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
-import ezdxf
-from ezdxf import bbox, recover
+try:
+    import ezdxf
+    from ezdxf import bbox, recover
+
+    EZDXF_AVAILABLE = True
+    DXFError = ezdxf.DXFError
+except ImportError:
+    ezdxf = None
+    bbox = None
+    recover = None
+    EZDXF_AVAILABLE = False
+    DXFError = RuntimeError
 
 from src.canonical import CanonicalBlock, CanonicalDocument, CanonicalPage, Region
 from .base import FormatAdapter
@@ -75,7 +85,7 @@ def _entity_bounds(entity, cache: bbox.Cache) -> tuple[float, float, float, floa
                 float(extents.extmax.x),
                 float(extents.extmax.y),
             )
-    except (AttributeError, TypeError, ValueError, ezdxf.DXFError):
+    except (AttributeError, TypeError, ValueError, DXFError):
         pass
     insert = entity.dxf.get("insert")
     if insert is not None:
@@ -100,7 +110,7 @@ def _entity_description(entity) -> tuple[str, str]:
                 measurement_text = " x ".join(_number(item) for item in measurement)
             else:
                 measurement_text = _number(measurement)
-        except (AttributeError, TypeError, ValueError, ezdxf.DXFError):
+        except (AttributeError, TypeError, ValueError, DXFError):
             measurement_text = str(entity.dxf.get("text", "")).strip() or "unknown"
         return f"DIMENSION layer={layer} measurement={measurement_text}", "dimension"
     if entity_type == "INSERT":
@@ -154,6 +164,8 @@ def _entity_description(entity) -> tuple[str, str]:
 
 
 def parse_dxf(pid: str, dxf_path: Path) -> tuple[list[CanonicalPage], dict, list[str]]:
+    if not EZDXF_AVAILABLE:
+        raise RuntimeError("The optional ezdxf dependency is not installed.")
     ezdxf_logger = logging.getLogger("ezdxf")
     previous_level = ezdxf_logger.level
     ezdxf_logger.setLevel(logging.CRITICAL)
@@ -272,13 +284,13 @@ class DwgAdapter(FormatAdapter):
 
     @classmethod
     def converter_available(cls) -> bool:
-        return cls.converter_path() is not None
+        return EZDXF_AVAILABLE and cls.converter_path() is not None
 
     def ingest(self, pid: str, path: Path) -> CanonicalDocument:
         raw = path.read_bytes()
         signature = raw[:6].decode("ascii", errors="replace")
         converter = self.converter_path()
-        if converter:
+        if converter and EZDXF_AVAILABLE:
             try:
                 with tempfile.TemporaryDirectory(prefix="deltascope-dwg-") as temporary:
                     dxf_path = Path(temporary) / f"{path.stem}.dxf"
@@ -308,8 +320,16 @@ class DwgAdapter(FormatAdapter):
                     },
                     warnings=warnings,
                 )
-            except (OSError, subprocess.SubprocessError, ValueError, ezdxf.DXFError) as exc:
+            except (OSError, subprocess.SubprocessError, ValueError, DXFError) as exc:
                 return self._fallback(pid, path, raw, signature, f"LibreDWG conversion failed: {exc}")
+        if converter and not EZDXF_AVAILABLE:
+            return self._fallback(
+                pid,
+                path,
+                raw,
+                signature,
+                "Install the optional DWG parser with `uv sync --extra dwg` for full geometry.",
+            )
         return self._fallback(
             pid,
             path,

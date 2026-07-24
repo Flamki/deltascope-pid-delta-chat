@@ -7,7 +7,7 @@ The UI intentionally has no authentication. The assignment does not ask for acco
 ## Run
 
 ```powershell
-uv sync
+uv sync --extra ocr --extra dwg
 uv run python app.py
 ```
 
@@ -25,6 +25,23 @@ redline PDF reports, and serves the chat-ready workspace at
 `uv run python app.py --demo`.
 `DELTASCOPE_DEMO_BASE` and `DELTASCOPE_DEMO_REVISED` can point the same command
 at another pair.
+
+## Vercel production deployment
+
+DeltaScope includes a two-function Vercel layout:
+
+- `api/index.py` serves the platform, native-PDF ingestion, delta, reports,
+  retrieval, chat, citations, and telemetry;
+- `services/ocr/api/index.py` isolates the larger RapidOCR/ONNX/OpenCV runtime;
+- the services authenticate with the sensitive `OCR_SERVICE_TOKEN` environment
+  variable, while `OCR_SERVICE_URL` points the main project to the OCR project.
+
+This split keeps both functions below Vercel's bundle limit without weakening
+the local OCR evaluation. The main function writes request-scoped files only to
+Vercel's writable `/tmp` directory. Vercel limits function request and response
+payloads to 4.5 MB, so the hosted UI advertises a 2 MB per-file and 4 MB
+comparison limit; the local application retains its 75 MB per-file limit.
+Production credentials are configured in Vercel, never committed.
 
 Upload File A (base) and File B (revised), then choose **Compare documents**. The application creates a comparison workspace with:
 
@@ -281,6 +298,9 @@ uv run python -m unittest discover -s tests -v
   to their type and bounding region; LibreDWG audit issues remain visible.
 - Full DWG geometry requires the open-source LibreDWG converter; without it the
   application deliberately uses the lower-confidence string fallback.
+- The Vercel deployment uses ephemeral `/tmp` session storage. It is suitable
+  for the take-home demonstration; durable multi-instance production would put
+  source files and session state in object storage plus a database.
 - Session persistence is local-disk/single-instance; horizontal deployment would move state to object storage plus a database.
 - The local answer provider is grounded and deterministic but less fluent than a generative LLM.
 

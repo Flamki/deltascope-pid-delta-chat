@@ -4,6 +4,8 @@ __pycache__/
 .tools/
 .agents/
 .playwright-mcp/
+.vercel/
+_uv/
 .env
 .env.*
 !.env.example

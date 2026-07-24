@@ -1,4 +1,10 @@
-const state = { files: { a: null, b: null }, session: null, activeTab: "PID-A", filter: "all" };
+const state = {
+  files: { a: null, b: null },
+  session: null,
+  activeTab: "PID-A",
+  filter: "all",
+  maxFileBytes: 75 * 1024 * 1024
+};
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const screens = ["upload-screen", "analysis-screen", "workspace-screen"];
@@ -23,8 +29,9 @@ function setFile(slot, file) {
     $("#form-error").textContent = "Use a native PDF, scanned PDF, or DWG file.";
     return;
   }
-  if (file && file.size > 75 * 1024 * 1024) {
-    $("#form-error").textContent = `${file.name} exceeds the 75 MB limit.`;
+  if (file && file.size > state.maxFileBytes) {
+    const limitMb = Math.floor(state.maxFileBytes / (1024 * 1024));
+    $("#form-error").textContent = `${file.name} exceeds the ${limitMb} MB deployment limit.`;
     return;
   }
   state.files[slot] = file || null;
@@ -289,4 +296,17 @@ async function restoreLatestComparison() {
     // A missing or expired local session should simply show the uploader.
   }
 }
-restoreLatestComparison();
+
+async function initializeRuntime() {
+  try {
+    const response = await fetch("/api/health");
+    if (response.ok) {
+      const runtime = await response.json();
+      if (runtime.max_file_bytes) state.maxFileBytes = runtime.max_file_bytes;
+    }
+  } catch {
+    // Local defaults remain usable if the capability check is unavailable.
+  }
+  await restoreLatestComparison();
+}
+initializeRuntime();

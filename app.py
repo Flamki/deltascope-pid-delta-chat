@@ -6,6 +6,7 @@ import json
 import mimetypes
 import os
 import re
+import tempfile
 import threading
 import time
 import uuid
@@ -23,7 +24,14 @@ from src.ingest.router import AdapterRouter
 from src.markup import create_dwg_svg, create_highlight_pdf, create_markup_pdf
 from src.observability import TraceStore
 
-ROOT = Path(__file__).parent.resolve()
+SOURCE_ROOT = Path(__file__).parent.resolve()
+IS_VERCEL = bool(os.getenv("VERCEL"))
+STORAGE_ROOT = Path(
+    os.getenv(
+        "DELTASCOPE_STORAGE_ROOT",
+        str(Path(tempfile.gettempdir()) / "deltascope") if IS_VERCEL else str(SOURCE_ROOT),
+    )
+).resolve()
 
 
 def load_local_environment(path: Path):
@@ -41,17 +49,31 @@ def load_local_environment(path: Path):
             os.environ[key] = value
 
 
-load_local_environment(ROOT / ".env")
-WEB = ROOT / "web"
-UPLOADS = ROOT / "artifacts" / "uploads"
-REPORTS = ROOT / "artifacts" / "reports"
+load_local_environment(SOURCE_ROOT / ".env")
+WEB = SOURCE_ROOT / "web"
+UPLOADS = STORAGE_ROOT / "artifacts" / "uploads"
+REPORTS = STORAGE_ROOT / "artifacts" / "reports"
 UPLOADS.mkdir(parents=True, exist_ok=True)
 REPORTS.mkdir(parents=True, exist_ok=True)
-TRACE_STORE = TraceStore(ROOT / os.getenv("TRACE_PATH", "artifacts/traces.jsonl"))
+trace_path = Path(os.getenv("TRACE_PATH", "artifacts/traces.jsonl"))
+if not trace_path.is_absolute():
+    trace_path = STORAGE_ROOT / trace_path
+TRACE_STORE = TraceStore(trace_path)
 ROUTER = AdapterRouter()
 SESSIONS: dict[str, "ComparisonSession"] = {}
 SESSION_LOCK = threading.Lock()
-MAX_FILE_BYTES = 75 * 1024 * 1024
+MAX_FILE_BYTES = int(
+    os.getenv(
+        "MAX_FILE_BYTES",
+        str(2 * 1024 * 1024 if IS_VERCEL else 75 * 1024 * 1024),
+    )
+)
+MAX_COMPARISON_BYTES = int(
+    os.getenv(
+        "MAX_COMPARISON_BYTES",
+        str(4 * 1024 * 1024 if IS_VERCEL else MAX_FILE_BYTES * 2 + 2 * 1024 * 1024),
+    )
+)
 ALLOWED_EXTENSIONS = {".pdf", ".dwg"}
 
 
@@ -100,8 +122,8 @@ def write_report_files(session: ComparisonSession):
     state = {
         "id": session.id,
         "created_at": session.created_at,
-        "base_path": str(session.base_path.relative_to(ROOT)),
-        "revised_path": str(session.revised_path.relative_to(ROOT)),
+        "base_path": str(session.base_path.relative_to(STORAGE_ROOT)),
+        "revised_path": str(session.revised_path.relative_to(STORAGE_ROOT)),
         "base": session.base.to_dict(),
         "revised": session.revised.to_dict(),
         "report": session.report,
@@ -172,7 +194,7 @@ def read_upload(field: tuple[str, bytes] | None) -> tuple[str, bytes]:
     if not content:
         raise ValueError(f"{filename}: file is empty.")
     if len(content) > MAX_FILE_BYTES:
-        raise ValueError(f"{filename}: file exceeds the 75 MB limit.")
+        raise ValueError(f"{filename}: file exceeds the {MAX_FILE_BYTES // (1024 * 1024)} MB limit.")
     if extension == ".pdf" and not content.startswith(b"%PDF"):
         raise ValueError(f"{filename}: extension is PDF but the file signature is invalid.")
     if extension == ".dwg" and not content.startswith(b"AC"):
@@ -182,9 +204,9 @@ def read_upload(field: tuple[str, bytes] | None) -> tuple[str, bytes]:
 
 def parse_multipart(headers, stream) -> dict[str, tuple[str, bytes]]:
     length = int(headers.get("Content-Length", "0"))
-    maximum = MAX_FILE_BYTES * 2 + 2 * 1024 * 1024
-    if length <= 0 or length > maximum:
-        raise ValueError("Upload body is empty or exceeds the 150 MB comparison limit.")
+    if length <= 0 or length > MAX_COMPARISON_BYTES:
+        limit_mb = MAX_COMPARISON_BYTES // (1024 * 1024)
+        raise ValueError(f"Upload body is empty or exceeds the {limit_mb} MB comparison limit.")
     body = stream.read(length)
     envelope = (
         f"Content-Type: {headers.get('Content-Type')}\r\nMIME-Version: 1.0\r\n\r\n".encode("utf-8")
@@ -325,8 +347,8 @@ def restore_sessions(limit: int = 20) -> int:
     for state_path in states:
         try:
             state = json.loads(state_path.read_text(encoding="utf-8"))
-            base_path = (ROOT / state["base_path"]).resolve()
-            revised_path = (ROOT / state["revised_path"]).resolve()
+            base_path = (STORAGE_ROOT / state["base_path"]).resolve()
+            revised_path = (STORAGE_ROOT / state["revised_path"]).resolve()
             base_path.relative_to(upload_root)
             revised_path.relative_to(upload_root)
             if not base_path.is_file() or not revised_path.is_file():
@@ -488,9 +510,19 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(
                 {
                     "status": "ok",
+                    "runtime": "vercel-serverless" if IS_VERCEL else "local",
+                    "storage": "ephemeral-/tmp" if IS_VERCEL else "local-disk",
+                    "max_file_bytes": MAX_FILE_BYTES,
+                    "max_comparison_bytes": MAX_COMPARISON_BYTES,
                     "formats": {
                         "native_pdf": "ready",
-                        "scanned_pdf": "ready",
+                        "scanned_pdf": (
+                            "ready_remote_ocr"
+                            if IS_VERCEL and os.getenv("OCR_SERVICE_URL")
+                            else "ready_local_ocr"
+                            if not IS_VERCEL
+                            else "ocr_service_not_configured"
+                        ),
                         "dwg": "ready" if ROUTER.dwg.converter_available() else "fallback_without_converter",
                     },
                     "answer_provider": os.getenv("ANSWER_PROVIDER", "local-extractive-v2"),
@@ -608,9 +640,17 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def preload_demo_session() -> ComparisonSession:
-    base_path = Path(os.getenv("DELTASCOPE_DEMO_BASE", ROOT / "data" / "samples" / "lift-gas-compressor.pdf"))
+    base_path = Path(
+        os.getenv(
+            "DELTASCOPE_DEMO_BASE",
+            SOURCE_ROOT / "data" / "samples" / "lift-gas-compressor.pdf",
+        )
+    )
     revised_path = Path(
-        os.getenv("DELTASCOPE_DEMO_REVISED", ROOT / "data" / "samples" / "export-gas-compressor.pdf")
+        os.getenv(
+            "DELTASCOPE_DEMO_REVISED",
+            SOURCE_ROOT / "data" / "samples" / "export-gas-compressor.pdf",
+        )
     )
     missing = [str(path) for path in (base_path, revised_path) if not path.is_file()]
     if missing:

@@ -4,10 +4,15 @@ version = "2.0.0"
 description = "Format-agnostic engineering document delta and grounded chat"
 requires-python = ">=3.11"
 dependencies = [
-  "ezdxf>=1.4,<2",
   "pymupdf==1.28.0",
-  "pypdf>=5.0",
-  "rapidfuzz>=3.14,<4",
+  "rapidfuzz>=3.14,<4"
+]
+
+[project.optional-dependencies]
+dwg = [
+  "ezdxf>=1.4,<2"
+]
+ocr = [
   "rapidocr-onnxruntime==1.4.4",
   "opencv-python==5.0.0.93",
   "Pillow>=10.0"
@@ -15,3 +20,6 @@ dependencies = [
 
 [tool.uv]
 package = false
+
+[tool.uv.sources]
+opencv-python = { path = "vendor/opencv-python-shim" }

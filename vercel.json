@@ -1,0 +1,16 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 300,
+      "includeFiles": "{web/**,data/samples/**}",
+      "excludeFiles": "{.tools/**,.venv/**,artifacts/**,tests/**,eval/**,scripts/**,services/**,data/eval/**,.agents/**,.playwright-mcp/**}"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/api/index"
+    }
+  ]
+}
