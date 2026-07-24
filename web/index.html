@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#eef5ff">
+  <title>DeltaScope - Document delta and grounded chat</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%232d7ff9'/%3E%3Cpath d='M32 14 47 48H17L32 14Zm0 11-6.5 16h13L32 25Z' fill='white'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
+  <main>
+    <section id="upload-screen" class="screen upload-screen active">
+      <div class="upload-hero">
+        <span class="overline"><i></i> Document delta, without the guesswork</span>
+        <h1>Compare engineering documents.<br><span>Ask what changed.</span></h1>
+        <p>Drop two revisions. DeltaScope aligns their content, builds a cited change report, and gives you a grounded workspace to investigate every difference.</p>
+        <div class="format-row">
+          <span>Native PDF</span><span>Scanned PDF + OCR</span><span>DWG</span>
+        </div>
+      </div>
+
+      <form class="upload-glass glass" id="upload-form">
+        <div class="upload-topline">
+          <div><span class="step-number">01</span><strong>Select two documents</strong></div>
+          <span>Up to 75 MB each</span>
+        </div>
+        <div class="drop-grid">
+          <label class="drop-zone" id="drop-a">
+            <input type="file" id="file-a" name="file_a" accept=".pdf,.dwg" required>
+            <span class="file-role">FILE A <em>BASE</em></span>
+            <span class="upload-icon">
+              <svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>
+            </span>
+            <strong>Drop the original here</strong>
+            <small>or <u>choose a file</u></small>
+            <div class="selected-file">
+              <span class="file-badge">PDF</span>
+              <span><b></b><small></small></span>
+              <button type="button" aria-label="Remove file">x</button>
+            </div>
+          </label>
+          <button class="swap-button" type="button" id="swap-files" aria-label="Swap documents" title="Swap documents">
+            <svg viewBox="0 0 24 24"><path d="m8 7-4 4 4 4M4 11h16m-4-4 4 4-4 4"/></svg>
+          </button>
+          <label class="drop-zone" id="drop-b">
+            <input type="file" id="file-b" name="file_b" accept=".pdf,.dwg" required>
+            <span class="file-role">FILE B <em>REVISED</em></span>
+            <span class="upload-icon">
+              <svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>
+            </span>
+            <strong>Drop the revision here</strong>
+            <small>or <u>choose a file</u></small>
+            <div class="selected-file">
+              <span class="file-badge">PDF</span>
+              <span><b></b><small></small></span>
+              <button type="button" aria-label="Remove file">x</button>
+            </div>
+          </label>
+        </div>
+        <div class="upload-footer">
+          <div class="security-note">
+            <svg viewBox="0 0 24 24"><path d="M7 10V7a5 5 0 0 1 10 0v3m-11 0h12v10H6V10Z"/></svg>
+            Files stay in this local workspace. No account required.
+          </div>
+          <button class="primary-button" id="compare-button" type="submit" disabled>
+            <span>Compare documents</span>
+            <svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg>
+          </button>
+        </div>
+        <div class="form-error" id="form-error"></div>
+      </form>
+
+      <div class="trust-strip">
+        <div><strong>Deterministic delta</strong><span>Reproducible structural matching</span></div>
+        <div><strong>Precise citations</strong><span>Page, block, and bounding region</span></div>
+        <div><strong>Visible reasoning</strong><span>Traces, retrieval, tokens, and cost</span></div>
+      </div>
+    </section>
+
+    <section id="analysis-screen" class="screen analysis-screen">
+      <div class="analysis-card glass">
+        <div class="orb"><span></span><span></span><span></span><b>Delta</b></div>
+        <p class="overline">Building comparison</p>
+        <h2 id="analysis-heading">Reading both documents</h2>
+        <p id="analysis-copy">Detecting formats and creating a shared document model.</p>
+        <div class="progress-track"><i id="progress-bar"></i></div>
+        <div class="analysis-steps">
+          <div class="active"><i></i><span>Ingest</span></div>
+          <div><i></i><span>Align</span></div>
+          <div><i></i><span>Delta</span></div>
+          <div><i></i><span>Index</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="workspace-screen" class="screen workspace-screen">
+      <div class="workspace-summary glass">
+        <button class="new-button" id="new-comparison" aria-label="Start a new comparison">
+          <svg viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></svg>
+          <span>New</span>
+        </button>
+        <div class="document-pair">
+          <span class="mini-file" id="mini-a">Δ</span>
+          <div><strong id="workspace-title">Comparison</strong><span id="workspace-subtitle"></span></div>
+        </div>
+        <div class="summary-stats">
+          <span><b id="count-total">0</b> changes</span>
+          <span class="critical"><b id="count-critical">0</b> critical</span>
+          <span><b id="alignment-score">0%</b> alignment</span>
+        </div>
+        <div class="workspace-actions">
+          <span class="privacy-pill"><i></i> Local</span>
+          <button class="icon-button" id="observability-button" title="Observability" aria-label="Observability">
+            <svg viewBox="0 0 24 24"><path d="M4 19V9m5 10V5m6 14v-7m5 7V3"/></svg>
+          </button>
+          <div class="export-menu">
+            <button class="soft-button" id="export-button">Export <svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg></button>
+            <div class="export-popover glass">
+              <a id="export-html" target="_blank">Human-readable HTML</a>
+              <a id="export-json" target="_blank">Machine-readable JSON</a>
+              <a id="export-md" target="_blank">Markdown report</a>
+              <a id="export-markup-a" target="_blank">Redline PDF - File A</a>
+              <a id="export-markup-b" target="_blank">Redline PDF - File B</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="workspace-grid glass">
+        <section class="chat-pane">
+          <div class="pane-header">
+            <div><span class="ai-mark">✦</span><div><strong>Grounded chat</strong><small id="provider-label">PID-A + PID-B + delta report</small></div></div>
+            <span class="grounded-badge"><i></i> Cited answers</span>
+          </div>
+          <div class="chat-thread" id="chat-thread">
+            <div class="message assistant">
+              <div class="avatar">✦</div>
+              <div class="bubble">
+                <p>I have compared both documents. Ask about a specific change, page, tag, note, dimension, or either revision.</p>
+                <div class="starter-questions">
+                  <button>What are the most critical changes?</button>
+                  <button>Summarize what changed</button>
+                  <button>What appears only in File B?</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <form class="composer" id="chat-form">
+            <textarea id="question" rows="1" placeholder="Ask about either document or the delta..." aria-label="Ask a question"></textarea>
+            <button type="submit" aria-label="Send question">
+              <svg viewBox="0 0 24 24"><path d="m5 12 14-7-5 14-2-6-7-1Zm7 1 7-8"/></svg>
+            </button>
+            <span>Every factual answer includes source citations</span>
+          </form>
+        </section>
+
+        <section class="document-pane">
+          <div class="document-tabs" role="tablist">
+            <button class="document-tab active" data-tab="PID-A"><span>A</span><b>File A</b><small id="tab-a-name"></small></button>
+            <button class="document-tab" data-tab="PID-B"><span>B</span><b>File B</b><small id="tab-b-name"></small></button>
+            <button class="document-tab delta-tab" data-tab="DELTA"><span>Δ</span><b>Delta</b><small id="tab-delta-count"></small></button>
+          </div>
+          <div class="viewer-toolbar">
+            <div id="viewer-label">File A</div>
+            <div class="viewer-tools">
+              <span id="page-label">Page 1</span>
+              <button id="open-document" title="Open source in new tab"><svg viewBox="0 0 24 24"><path d="M14 5h5v5M12 12l7-7M19 14v5H5V5h5"/></svg></button>
+            </div>
+          </div>
+          <div class="viewer-stage" id="viewer-stage">
+            <iframe id="document-frame" title="Uploaded document"></iframe>
+            <div class="dwg-viewer hidden" id="dwg-viewer">
+              <span class="dwg-icon">DWG</span>
+              <h3>DWG source indexed</h3>
+              <p>Binary drawing preview is unavailable without a geometry converter. Recovered text remains searchable and citable.</p>
+            </div>
+            <div class="delta-viewer hidden" id="delta-viewer">
+              <div class="delta-controls">
+                <div class="alignment-banner" id="alignment-banner"></div>
+                <div class="delta-filter-row">
+                  <div class="delta-filters">
+                    <button class="active" data-filter="all">All</button>
+                    <button data-filter="modified">Modified</button>
+                    <button data-filter="added">Added</button>
+                    <button data-filter="removed">Removed</button>
+                  </div>
+                  <span class="review-count" id="review-count">0 findings</span>
+                </div>
+              </div>
+              <div class="finding-list" id="finding-list"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <dialog class="observability-dialog glass" id="observability-dialog">
+    <div class="dialog-head"><div><span class="overline">System evidence</span><h2>Observability</h2></div><button id="close-observability">x</button></div>
+    <div class="metric-grid" id="metric-grid"></div>
+    <div class="trace-table">
+      <div class="trace-row trace-header"><span>Request</span><span>Pipeline</span><span>Latency</span><span>Status</span></div>
+      <div id="trace-list"></div>
+    </div>
+  </dialog>
+
+  <script src="/assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+[project]
+name = "deltascope"
+version = "2.0.0"
+description = "Format-agnostic engineering document delta and grounded chat"
+requires-python = ">=3.11"
+dependencies = [
+  "pymupdf==1.28.0",
+  "pypdf>=5.0",
+  "rapidocr-onnxruntime==1.4.4",
+  "opencv-python==5.0.0.93",
+  "Pillow>=10.0"
+]
+
+[tool.uv]
+package = false
+

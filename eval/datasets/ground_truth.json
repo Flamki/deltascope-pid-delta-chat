@@ -1,0 +1,55 @@
+{
+  "pairs": [
+    {
+      "id": "native-equipment-revision",
+      "base": "data/eval/native-equipment-a.pdf",
+      "revised": "data/eval/native-equipment-b.pdf",
+      "expected_changes": [
+        {"must_contain": ["pressure", "10", "12"]},
+        {"must_contain": ["carbon steel", "stainless steel"]},
+        {"must_contain": ["psv-102"]}
+      ],
+      "questions": [
+        {
+          "question": "What changed about the design pressure?",
+          "answer_must_contain": ["pressure", "12"]
+        },
+        {
+          "question": "Was a PSV added?",
+          "answer_must_contain": ["psv-102"]
+        }
+      ]
+    },
+    {
+      "id": "scanned-setpoint-revision",
+      "base": "data/eval/scanned-setpoint-a.pdf",
+      "revised": "data/eval/scanned-setpoint-b.pdf",
+      "expected_changes": [
+        {"must_contain": ["trip", "80", "85"]},
+        {"must_contain": ["alarm", "75"]}
+      ],
+      "questions": [
+        {
+          "question": "What is the revised trip set point?",
+          "answer_must_contain": ["trip", "85"]
+        }
+      ]
+    },
+    {
+      "id": "native-note-revision",
+      "base": "data/eval/native-note-a.pdf",
+      "revised": "data/eval/native-note-b.pdf",
+      "expected_changes": [
+        {"must_contain": ["vent", "safe location"]},
+        {"must_contain": ["drain", "closed drain"]}
+      ],
+      "questions": [
+        {
+          "question": "Where is the vent routed?",
+          "answer_must_contain": ["vent", "safe location"]
+        }
+      ]
+    }
+  ]
+}
+

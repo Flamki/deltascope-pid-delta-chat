@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.agents/
+.playwright-mcp/
+.env
+.env.*
+!.env.example
+artifacts/*.jsonl
+artifacts/*.json
+artifacts/uploads/
+artifacts/reports/
+artifacts/api-upload-result.json
+artifacts/eval-scorecard.json
+tmp/
