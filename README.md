@@ -193,14 +193,14 @@ python -m unittest discover -s tests -v
 | Machine-readable report | Exported JSON |
 | Grounded chat | PID-A, PID-B, and Delta retrieval |
 | Citations | Source PID, page, block ID, region, and excerpt |
-| One command | `python app.py` |
+| One command | `make demo` ingests the bundled pair, writes reports, and serves chat |
 | Tracing and JSON logs | `artifacts/traces.jsonl` and structured access logs |
 | Token and cost telemetry | Full prompt/response/provider/tokens/cost per chat |
 | Metrics | Session latency, errors, LLM calls, retrieval hits, tokens, cost, and delta counts |
 | Runnable eval | `python -m eval.run_eval` or `make eval` |
 | Failure reporting | README, scorecard, adapter warnings |
 | Samples | Three generated pairs with provenance in code |
-| Secrets | `.env.example`; no credentials required |
+| Secrets | ignored local `.env`, placeholder-only `.env.example`, and deterministic no-key fallback |
 | Walkthrough | `DEMO.md` |
 
 ## Honest limitations

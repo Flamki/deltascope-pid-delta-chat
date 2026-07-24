@@ -52,8 +52,10 @@ evidence. Bonus items are listed separately.
 
 | Requirement | Status | Evidence |
 |---|---|---|
-| Config over hardcoding | Pass | Environment-selected provider/model/costs and upload/trace configuration |
+| Config over hardcoding | Pass | Environment-selected provider/model/costs, delta thresholds, demo paths, and trace path |
 | No committed secrets | Pass | `.env` and `.env.*` ignored; `.env.example` contains placeholders |
+| Reproducible dependency set | Pass | Pinned project constraints plus committed `uv.lock` |
+| Git submission | Pass | Initialized `main` repository with a clean tracked-secret scan |
 | Tests | Pass | `python -m unittest discover -s tests -v` |
 | README trade-offs and next steps | Pass | `README.md` |
 | Walkthrough | Pass | `DEMO.md` |
