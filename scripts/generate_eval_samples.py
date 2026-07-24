@@ -1,11 +1,16 @@
 from pathlib import Path
 
 import fitz
-from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / "data" / "eval"
 TARGET.mkdir(parents=True, exist_ok=True)
+
+
+def save_deterministic(document: fitz.Document, path: Path):
+    document.set_metadata({})
+    document.save(path, garbage=4, deflate=True, no_new_id=True)
+    document.close()
 
 
 def native(name: str, lines: list[str]):
@@ -14,19 +19,22 @@ def native(name: str, lines: list[str]):
     page.insert_text((54, 52), "DELTASCOPE EVALUATION DRAWING", fontsize=16)
     for index, line in enumerate(lines):
         page.insert_text((54, 110 + index * 38), line, fontsize=14)
-    document.save(TARGET / name)
-    document.close()
+    save_deterministic(document, TARGET / name)
 
 
 def scanned(name: str, lines: list[str]):
-    image = Image.new("RGB", (1500, 1900), "white")
-    draw = ImageDraw.Draw(image)
-    font = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", 44)
-    heading = ImageFont.truetype("C:/Windows/Fonts/arialbd.ttf", 52)
-    draw.text((110, 100), "COMPRESSOR CONTROL SETPOINTS", fill="black", font=heading)
+    source = fitz.open()
+    page = source.new_page(width=612, height=792)
+    page.insert_text((54, 52), "COMPRESSOR CONTROL SETPOINTS", fontsize=18)
     for index, line in enumerate(lines):
-        draw.text((110, 280 + index * 120), line, fill="black", font=font)
-    image.save(TARGET / name, "PDF", resolution=150)
+        page.insert_text((54, 120 + index * 48), line, fontsize=16)
+    pixmap = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5), alpha=False)
+    source.close()
+
+    scanned_document = fitz.open()
+    scanned_page = scanned_document.new_page(width=612, height=792)
+    scanned_page.insert_image(scanned_page.rect, stream=pixmap.tobytes("png"))
+    save_deterministic(scanned_document, TARGET / name)
 
 
 native(
@@ -55,4 +63,3 @@ native(
 )
 
 print(f"Generated evaluation samples in {TARGET}")
-

@@ -12,11 +12,13 @@
       "questions": [
         {
           "question": "What changed about the design pressure?",
-          "answer_must_contain": ["pressure", "12"]
+          "answer_must_contain": ["pressure", "12"],
+          "evidence_must_contain": ["pressure", "10", "12"]
         },
         {
           "question": "Was a PSV added?",
-          "answer_must_contain": ["psv-102"]
+          "answer_must_contain": ["psv-102"],
+          "evidence_must_contain": ["psv-102"]
         }
       ]
     },
@@ -31,7 +33,8 @@
       "questions": [
         {
           "question": "What is the revised trip set point?",
-          "answer_must_contain": ["trip", "85"]
+          "answer_must_contain": ["trip", "85"],
+          "evidence_must_contain": ["trip", "80", "85"]
         }
       ]
     },
@@ -46,10 +49,10 @@
       "questions": [
         {
           "question": "Where is the vent routed?",
-          "answer_must_contain": ["vent", "safe location"]
+          "answer_must_contain": ["vent", "safe location"],
+          "evidence_must_contain": ["vent", "safe location"]
         }
       ]
     }
   ]
 }
-

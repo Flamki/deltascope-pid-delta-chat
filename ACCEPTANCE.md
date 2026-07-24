@@ -43,8 +43,9 @@ evidence. Bonus items are listed separately.
 | Sample provenance | Pass | `data/PROVENANCE.md` and deterministic generator |
 | Delta precision/recall/F1 | Pass | `eval/run_eval.py` |
 | Chat correctness | Pass | Expected-answer token assertions |
-| Groundedness/citation accuracy | Pass | Citation source and presence validation |
-| Runnable scorecard | Pass | `python -m eval.run_eval` or `make eval` |
+| Groundedness/citation accuracy | Pass | Cited excerpts must contain the labeled supporting evidence |
+| Retrieval quality | Pass | Labeled BM25 recall@k and mean reciprocal rank |
+| Runnable scorecard | Pass | `uv run python -m eval.run_eval` or `make eval` |
 | Regression-friendly output | Pass | Stable JSON scorecard at `artifacts/eval-scorecard.json` |
 | Honest failure reporting | Pass | Scorecard, README limitations, and adapter warnings |
 
@@ -56,7 +57,7 @@ evidence. Bonus items are listed separately.
 | No committed secrets | Pass | `.env` and `.env.*` ignored; `.env.example` contains placeholders |
 | Reproducible dependency set | Pass | Pinned project constraints plus committed `uv.lock` |
 | Git submission | Pass | Initialized `main` repository with a clean tracked-secret scan |
-| Tests | Pass | `python -m unittest discover -s tests -v` |
+| Tests | Pass | `uv run python -m unittest discover -s tests -v` |
 | README trade-offs and next steps | Pass | `README.md` |
 | Walkthrough | Pass | `DEMO.md` |
 
@@ -64,6 +65,6 @@ evidence. Bonus items are listed separately.
 
 - Served upload-first UI and observability dashboard: implemented.
 - All three uploads accepted: implemented; DWG entity geometry remains limited.
-- Retrieval-quality evaluation: implemented.
+- Retrieval-quality evaluation: implemented with labeled recall@k and mean reciprocal rank.
 - Cost and latency accounting: implemented.
 - Visual redline/markup PDF: implemented for PDF sources with added, removed, and modified color overlays.

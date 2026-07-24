@@ -8,7 +8,9 @@ from unittest.mock import patch
 
 import fitz
 
+from src.canonical import CanonicalDocument
 from src.chat import answer_question
+from src.chat.answer import bm25_rank
 from src.chat.providers import _line_has_valid_citation
 from src.delta import compare_documents
 from src.ingest.router import AdapterRouter
@@ -49,6 +51,11 @@ class PipelineTests(unittest.TestCase):
         self.assertGreaterEqual(len(document.blocks), 3)
         self.assertGreater(document.blocks[0].region.x1, document.blocks[0].region.x0)
 
+    def test_canonical_document_round_trip_supports_session_restore(self):
+        original = AdapterRouter().ingest("PID-A", self.base_path)
+        restored = CanonicalDocument.from_dict(original.to_dict())
+        self.assertEqual(restored.to_dict(), original.to_dict())
+
     def test_delta_is_structured(self):
         router = AdapterRouter()
         base = router.ingest("PID-A", self.base_path)
@@ -77,6 +84,29 @@ class PipelineTests(unittest.TestCase):
         self.assertGreater(result["retrieval_hits"], 0)
         self.assertTrue(result["citations"])
         self.assertTrue(all(citation["source"] in {"PID-A", "PID-B", "DELTA"} for citation in result["citations"]))
+
+    def test_specific_what_changed_question_uses_relevant_evidence(self):
+        router = AdapterRouter()
+        base = router.ingest("PID-A", self.base_path)
+        revised = router.ingest("PID-B", self.revised_path)
+        report = compare_documents(base, revised)
+        result = answer_question("What changed about the design pressure?", [base, revised], report)
+        supporting = [
+            citation
+            for citation in result["citations"]
+            if all(token in citation["excerpt"].lower() for token in ("pressure", "10", "12"))
+        ]
+        self.assertTrue(supporting)
+        self.assertEqual(result["retrieval"]["method"], "okapi-bm25")
+
+    def test_bm25_ranks_rare_engineering_tag_first(self):
+        corpus = [
+            {"id": "A", "source": "PID-A", "text": "general compressor pressure note"},
+            {"id": "B", "source": "PID-B", "text": "PSV-102 set pressure 12 barg"},
+        ]
+        ranked, metadata = bm25_rank("What is PSV-102 pressure?", corpus)
+        self.assertEqual(ranked[0][1]["id"], "B")
+        self.assertEqual(metadata["method"], "okapi-bm25")
 
     def test_dwg_upload_uses_same_canonical_model(self):
         path = self.root / "drawing.dwg"

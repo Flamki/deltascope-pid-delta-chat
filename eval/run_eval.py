@@ -27,7 +27,9 @@ def run():
     dataset = json.loads(DATASET.read_text(encoding="utf-8"))
     router = AdapterRouter()
     true_positive = false_positive = false_negative = 0
-    question_total = question_correct = citation_correct = 0
+    question_total = question_correct = citation_correct = grounded_correct = 0
+    retrieval_hit = 0
+    reciprocal_rank = 0.0
     pair_results = []
 
     for pair in dataset["pairs"]:
@@ -61,12 +63,23 @@ def run():
         for qa in pair["questions"]:
             result = answer_question(qa["question"], [base, revised], report)
             answer = result["answer"].lower()
+            evidence_tokens = [token.lower() for token in qa["evidence_must_contain"]]
+            support_positions = [
+                index
+                for index, citation in enumerate(result["citations"])
+                if all(token in citation["excerpt"].lower() for token in evidence_tokens)
+            ]
+            supported = bool(support_positions)
             question_total += 1
             question_correct += all(token.lower() in answer for token in qa["answer_must_contain"])
-            citation_correct += bool(result["citations"]) and all(
+            syntactically_valid = bool(result["citations"]) and all(
                 citation["source"] in {"PID-A", "PID-B", "DELTA"} and citation["id"]
                 for citation in result["citations"]
             )
+            citation_correct += syntactically_valid and supported
+            grounded_correct += bool(result["grounded"]) and supported
+            retrieval_hit += supported
+            reciprocal_rank += 1 / (support_positions[0] + 1) if support_positions else 0
         pair_results.append(
             {
                 "id": pair["id"],
@@ -93,7 +106,13 @@ def run():
         "chat": {
             "answer_correctness": round(question_correct / max(1, question_total), 4),
             "citation_accuracy": round(citation_correct / max(1, question_total), 4),
+            "groundedness": round(grounded_correct / max(1, question_total), 4),
             "questions": question_total,
+        },
+        "retrieval": {
+            "method": "okapi-bm25",
+            "recall_at_k": round(retrieval_hit / max(1, question_total), 4),
+            "mean_reciprocal_rank": round(reciprocal_rank / max(1, question_total), 4),
         },
         "pairs": pair_results,
         "known_failures": [
@@ -111,4 +130,3 @@ def run():
 
 if __name__ == "__main__":
     run()
-

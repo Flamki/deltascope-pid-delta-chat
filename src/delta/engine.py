@@ -3,8 +3,8 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import asdict, dataclass
-from difflib import SequenceMatcher
 
+from rapidfuzz import fuzz
 from src.canonical import CanonicalBlock, CanonicalDocument
 
 
@@ -38,10 +38,17 @@ def similarity(left: str, right: str) -> float:
     a, b = normalize(left), normalize(right)
     if not a or not b:
         return 0.0
-    sequence = SequenceMatcher(None, a, b).ratio()
+    sequence = fuzz.ratio(a, b) / 100
     ta, tb = set(a.split()), set(b.split())
     jaccard = len(ta & tb) / max(1, len(ta | tb))
     return 0.65 * sequence + 0.35 * jaccard
+
+
+def blocking_keys(text: str) -> set[str]:
+    tokens = normalize(text).split()
+    keys = {f"t:{token}" for token in tokens}
+    keys.update(f"p:{token[:3]}" for token in tokens if len(token) >= 4)
+    return keys
 
 
 def severity(kind: str, text: str) -> str:
@@ -74,16 +81,27 @@ def compare_documents(base: CanonicalDocument, revised: CanonicalDocument) -> di
             matched_right.add(right_index)
             exact += 1
 
+    right_index: dict[str, set[int]] = {}
+    for right_index_value, right_block in enumerate(right):
+        if right_index_value in matched_right:
+            continue
+        for key in blocking_keys(right_block.text):
+            right_index.setdefault(key, set()).add(right_index_value)
+
     candidates: list[tuple[float, int, int]] = []
     for left_index, left_block in enumerate(left):
         if left_index in matched_left:
             continue
-        for right_index, right_block in enumerate(right):
-            if right_index in matched_right:
+        candidate_indices: set[int] = set()
+        for key in blocking_keys(left_block.text):
+            candidate_indices.update(right_index.get(key, set()))
+        for right_index_value in candidate_indices:
+            if right_index_value in matched_right:
                 continue
+            right_block = right[right_index_value]
             score = similarity(left_block.text, right_block.text)
             if score >= similarity_threshold:
-                candidates.append((score, left_index, right_index))
+                candidates.append((score, left_index, right_index_value))
     candidates.sort(reverse=True)
 
     findings: list[Finding] = []

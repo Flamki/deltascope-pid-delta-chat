@@ -8,7 +8,7 @@ The UI intentionally has no authentication. The assignment does not ask for acco
 
 ```powershell
 uv sync
-python app.py
+uv run python app.py
 ```
 
 Open `http://127.0.0.1:8000`.
@@ -21,7 +21,8 @@ make demo
 
 This ingests the bundled compressor pair, generates JSON, Markdown, HTML, and
 redline PDF reports, and serves the chat-ready workspace at
-`http://127.0.0.1:8000`. The equivalent command is `python app.py --demo`.
+`http://127.0.0.1:8000`. The equivalent command is
+`uv run python app.py --demo`.
 `DELTASCOPE_DEMO_BASE` and `DELTASCOPE_DEMO_REVISED` can point the same command
 at another pair.
 
@@ -100,6 +101,11 @@ The engine deliberately does not use an LLM. Structural results are reproducible
 `DELTA_ALIGNMENT_THRESHOLD` make the main matching decisions configurable
 without changing code. Every JSON report records the effective values.
 
+Candidate blocking avoids comparing every block with every other block, and
+RapidFuzz performs the remaining similarity calculations. On the supplied
+compressor pair this reduced the measured delta stage from roughly 2.04 seconds
+to 0.10 seconds while preserving the labeled evaluation score.
+
 ## Grounded chat
 
 Retrieval spans:
@@ -108,7 +114,13 @@ Retrieval spans:
 - every canonical block from PID-B;
 - every structured delta finding.
 
-The local provider returns extractive statements with page/block/region citations. Unsupported questions produce a refusal instead of an invented answer. `src/chat/providers.py` implements Fireworks AI and generic OpenAI-compatible LLM clients. Hosted output is accepted only when each factual line includes a retrieved citation ID; otherwise the system uses the deterministic fallback and records the provider failure.
+Evidence is ranked with deterministic Okapi BM25. The local provider returns
+extractive statements with page/block/region citations. Unsupported questions
+produce a refusal instead of an invented answer. `src/chat/providers.py`
+implements Fireworks AI and generic OpenAI-compatible LLM clients. Hosted output
+is accepted only when each factual line includes a retrieved citation ID;
+otherwise the system uses the deterministic fallback and records the provider
+failure.
 
 To enable Fireworks, create an ignored `.env`:
 
@@ -152,13 +164,17 @@ records the prompt, response, provider name, input/output token estimates,
 citations, latency, and cost. Errors are retained with the same request and
 session identifiers.
 
+Completed canonical documents, reports, and source paths are persisted under the
+ignored artifacts directory. The server restores the 20 most recent sessions on
+startup without repeating OCR or LLM calls.
+
 ## Evaluation
 
 Generate samples and print the scorecard:
 
 ```powershell
-python scripts/generate_eval_samples.py
-python -m eval.run_eval
+uv run python scripts/generate_eval_samples.py
+uv run python -m eval.run_eval
 ```
 
 Or:
@@ -173,13 +189,44 @@ The labeled dataset includes three independent pairs:
 - scanned PDF set-point revision;
 - native PDF note revision.
 
-The scorecard reports delta precision/recall/F1, answer correctness, citation accuracy, per-pair formats, and known failures. The latest result is written to `artifacts/eval-scorecard.json`.
+The fixture generator uses built-in PDF fonts and deterministic document output,
+so repeated `make eval` runs do not dirty the repository.
+
+The scorecard reports delta precision/recall/F1, answer correctness,
+evidence-backed groundedness/citation accuracy, BM25 recall@k and mean
+reciprocal rank, per-pair formats, and known failures. Citation accuracy requires
+the cited excerpt to contain the labeled supporting evidence; checking only for
+the presence of a citation ID is intentionally insufficient. The latest result
+is written to `artifacts/eval-scorecard.json`.
 
 Run unit tests:
 
 ```powershell
-python -m unittest discover -s tests -v
+uv run python -m unittest discover -s tests -v
 ```
+
+## Open-source research and design choices
+
+- [Docling](https://github.com/docling-project/docling) validates the value of a
+  unified document representation and local OCR. DeltaScope keeps a smaller
+  P&ID-specific model because exact page regions and a lightweight install matter
+  more here than broad office-format support.
+- [RapidFuzz](https://github.com/rapidfuzz/RapidFuzz) provides the optimized
+  fuzzy similarity primitive used after deterministic candidate blocking.
+- [BM25S](https://github.com/xhluca/bm25s) informed the BM25 retrieval baseline.
+  This corpus is only hundreds of blocks, so DeltaScope uses a small transparent
+  implementation rather than adding SciPy-backed indexing infrastructure.
+- [RapidOCR](https://rapidai.github.io/RapidOCRDocs/main/install_usage/rapidocr/usage/)
+  supports offline scanned-PDF extraction, while
+  [PyMuPDF](https://pymupdf.readthedocs.io/) supplies native text coordinates and
+  PDF annotations.
+- [OpenTelemetry's tracing model](https://opentelemetry.io/docs/languages/python/instrumentation/)
+  informed the trace/span structure. A dependency-light JSONL exporter is used
+  for the take-home, with trace IDs and parent linkage kept compatible with a
+  future OTLP exporter.
+- [GNU LibreDWG](https://www.gnu.org/software/libredwg/manual/LibreDWG.pdf) is the
+  documented extension path for full DWG entities and geometry; the current DWG
+  adapter intentionally remains conservative.
 
 ## Requirement matrix
 
@@ -192,12 +239,13 @@ python -m unittest discover -s tests -v
 | Human-readable report | Workspace plus exported HTML/Markdown |
 | Machine-readable report | Exported JSON |
 | Grounded chat | PID-A, PID-B, and Delta retrieval |
+| Retrieval quality | BM25 plus labeled recall@k and mean reciprocal rank |
 | Citations | Source PID, page, block ID, region, and excerpt |
 | One command | `make demo` ingests the bundled pair, writes reports, and serves chat |
 | Tracing and JSON logs | `artifacts/traces.jsonl` and structured access logs |
 | Token and cost telemetry | Full prompt/response/provider/tokens/cost per chat |
 | Metrics | Session latency, errors, LLM calls, retrieval hits, tokens, cost, and delta counts |
-| Runnable eval | `python -m eval.run_eval` or `make eval` |
+| Runnable eval | `uv run python -m eval.run_eval` or `make eval` |
 | Failure reporting | README, scorecard, adapter warnings |
 | Samples | Three generated pairs with provenance in code |
 | Secrets | ignored local `.env`, placeholder-only `.env.example`, and deterministic no-key fallback |
@@ -209,13 +257,13 @@ python -m unittest discover -s tests -v
 - OCR is slower and its bounding boxes are approximate.
 - Very noisy scans can split or confuse engineering labels.
 - Full DWG entity/geometry extraction needs a configured converter.
-- In-memory comparison sessions do not survive a process restart; source uploads, exported reports, and traces do.
+- Session persistence is local-disk/single-instance; horizontal deployment would move state to object storage plus a database.
 - The local answer provider is grounded and deterministic but less fluent than a generative LLM.
 
 ## What I would do next
 
 1. Add LibreDWG conversion and parse layers, blocks, dimensions, and entity coordinates.
-2. Register pages visually and generate a redline/markup PDF.
+2. Register revision pages visually before geometry/symbol comparison.
 3. Add engineering-symbol detection and graph matching for P&IDs.
-4. Persist canonical documents in SQLite/Postgres and indexes in a vector store.
-5. Add an optional generative answer provider while retaining citation validation and deterministic fallback.
+4. Move persisted sessions to object storage plus Postgres for horizontal scale.
+5. Add a calibrated hybrid dense/sparse retriever after expanding the labeled retrieval set.

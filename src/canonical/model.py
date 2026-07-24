@@ -62,3 +62,35 @@ class CanonicalDocument:
         data["block_count"] = len(self.blocks)
         return data
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "CanonicalDocument":
+        pages = []
+        for page_data in data.get("pages", []):
+            blocks = [
+                CanonicalBlock(
+                    id=block["id"],
+                    page=int(block["page"]),
+                    text=block["text"],
+                    region=Region(**block["region"]),
+                    kind=block.get("kind", "text"),
+                    confidence=float(block.get("confidence", 1.0)),
+                )
+                for block in page_data.get("blocks", [])
+            ]
+            pages.append(
+                CanonicalPage(
+                    number=int(page_data["number"]),
+                    width=float(page_data["width"]),
+                    height=float(page_data["height"]),
+                    blocks=blocks,
+                )
+            )
+        return cls(
+            pid=data["pid"],
+            filename=data["filename"],
+            format=data["format"],
+            adapter=data["adapter"],
+            pages=pages,
+            metadata=data.get("metadata", {}),
+            warnings=data.get("warnings", []),
+        )

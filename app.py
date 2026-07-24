@@ -16,6 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from src.canonical import CanonicalDocument
 from src.chat import answer_question
 from src.delta import compare_documents
 from src.ingest.router import AdapterRouter
@@ -96,6 +97,16 @@ def write_report_files(session: ComparisonSession):
     target.mkdir(parents=True, exist_ok=True)
     payload = session.summary()
     (target / "report.json").write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    state = {
+        "id": session.id,
+        "created_at": session.created_at,
+        "base_path": str(session.base_path.relative_to(ROOT)),
+        "revised_path": str(session.revised_path.relative_to(ROOT)),
+        "base": session.base.to_dict(),
+        "revised": session.revised.to_dict(),
+        "report": session.report,
+    }
+    (target / "session.json").write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
     counts = session.report["counts"]
     lines = [
         f"# Delta report: {session.base.filename} vs {session.revised.filename}",
@@ -302,6 +313,40 @@ def attach_comparison_lineage(trace: dict, session_id: str):
         )
 
 
+def restore_sessions(limit: int = 20) -> int:
+    """Restore recent completed comparisons without re-running OCR or delta."""
+
+    restored = 0
+    states = sorted(
+        REPORTS.glob("*/session.json"),
+        key=lambda path: path.stat().st_mtime,
+    )[-limit:]
+    upload_root = UPLOADS.resolve()
+    for state_path in states:
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            base_path = (ROOT / state["base_path"]).resolve()
+            revised_path = (ROOT / state["revised_path"]).resolve()
+            base_path.relative_to(upload_root)
+            revised_path.relative_to(upload_root)
+            if not base_path.is_file() or not revised_path.is_file():
+                continue
+            session = ComparisonSession(
+                id=state["id"],
+                created_at=float(state["created_at"]),
+                base_path=base_path,
+                revised_path=revised_path,
+                base=CanonicalDocument.from_dict(state["base"]),
+                revised=CanonicalDocument.from_dict(state["revised"]),
+                report=state["report"],
+            )
+            SESSIONS[session.id] = session
+            restored += 1
+        except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError):
+            continue
+    return restored
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "DeltaScope/2.0"
 
@@ -392,7 +437,15 @@ class Handler(BaseHTTPRequestHandler):
                 session.report,
                 session_id=session_id,
             )
-            TRACE_STORE.span(trace, "retrieval", started, hits=result["retrieval_hits"], sources=list({c["source"] for c in result["citations"]}))
+            TRACE_STORE.span(
+                trace,
+                "retrieval",
+                started,
+                hits=result["retrieval_hits"],
+                sources=list({c["source"] for c in result["citations"]}),
+                method=result.get("retrieval", {}).get("method"),
+                top_scores=result.get("retrieval", {}).get("top_scores", [])[:5],
+            )
             started = time.perf_counter()
             TRACE_STORE.span(
                 trace,
@@ -549,12 +602,15 @@ def preload_demo_session() -> ComparisonSession:
 def run(demo: bool = False):
     host = os.getenv("HOST", "127.0.0.1")
     port = int(os.getenv("PORT", "8000"))
+    restored = restore_sessions()
     if demo:
         session = preload_demo_session()
         print(
             f"Demo comparison {session.id} ready: "
             f"{session.base.filename} -> {session.revised.filename}"
         )
+    elif restored:
+        print(f"Restored {restored} comparison session(s)")
     print(f"DeltaScope ready at http://{host}:{port}")
     ThreadingHTTPServer((host, port), Handler).serve_forever()
 

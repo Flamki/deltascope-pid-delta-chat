@@ -60,5 +60,6 @@ The command prints the regression scorecard and writes
 
 - delta precision / recall / F1: `1.0 / 1.0 / 1.0`;
 - chat answer correctness: `1.0`;
-- citation accuracy: `1.0`;
+- groundedness and evidence-backed citation accuracy: `1.0 / 1.0`;
+- BM25 retrieval recall@k / mean reciprocal rank: `1.0 / 0.8333`;
 - three labeled document pairs, including a scanned-PDF/OCR pair.
