@@ -230,6 +230,8 @@ document.addEventListener("click", event => {
 });
 
 function addMessage(role, content, citations = []) {
+  const thread = $("#chat-thread");
+  const shouldFollow = role === "user" || thread.scrollHeight - thread.scrollTop - thread.clientHeight < 100;
   const element = document.createElement("div");
   element.className = `message ${role}`;
   if (role === "user") {
@@ -239,12 +241,26 @@ function addMessage(role, content, citations = []) {
       <div class="citation-list">${citations.map(citation => `<button class="citation-chip" data-source="${escapeHtml(citation.source)}" data-target-source="${escapeHtml(citation.target_source || "")}" data-block="${escapeHtml(citation.target_block_id || "")}" data-page="${citation.page || 1}">${escapeHtml(citation.id)} · ${escapeHtml(citation.target_source || citation.source)} · p.${citation.page || "—"}</button>`).join("")}</div></div>`;
     $$(".citation-chip", element).forEach(button => button.addEventListener("click", () => openCitation(button.dataset.source, button.dataset.page, button.dataset.block, button.dataset.targetSource)));
   }
-  $("#chat-thread").append(element);
-  $("#chat-thread").scrollTop = $("#chat-thread").scrollHeight;
+  thread.append(element);
+  if (shouldFollow) {
+    requestAnimationFrame(() => thread.scrollTo({ top: thread.scrollHeight, behavior: "smooth" }));
+  }
+  requestAnimationFrame(updateChatJumpButton);
   return element;
 }
 
 const questionField = $("#question");
+const chatThread = $("#chat-thread");
+
+function updateChatJumpButton() {
+  const distance = chatThread.scrollHeight - chatThread.scrollTop - chatThread.clientHeight;
+  $("#scroll-to-bottom").classList.toggle("hidden", distance < 110);
+}
+
+chatThread.addEventListener("scroll", updateChatJumpButton, { passive: true });
+$("#scroll-to-bottom").addEventListener("click", () => {
+  chatThread.scrollTo({ top: chatThread.scrollHeight, behavior: "smooth" });
+});
 
 function resizeQuestionField() {
   questionField.style.height = "auto";
@@ -338,6 +354,8 @@ function resetComparison() {
   localStorage.setItem("deltascope-skip-restore", "1");
   $("#file-a").value = ""; $("#file-b").value = ""; setFile("a", null); setFile("b", null);
   $("#chat-thread").querySelectorAll(".message:not(:first-child)").forEach(message => message.remove());
+  chatThread.scrollTop = 0;
+  updateChatJumpButton();
   showScreen("upload-screen");
 }
 $("#new-comparison").addEventListener("click", resetComparison);

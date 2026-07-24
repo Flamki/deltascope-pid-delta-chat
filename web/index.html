@@ -219,7 +219,10 @@
                 </div>
               </div>
               <form class="composer" id="chat-form">
-                <textarea id="question" rows="1" placeholder="Ask about either document or the delta..." aria-label="Ask a question"></textarea>
+                <button class="chat-jump hidden" id="scroll-to-bottom" type="button" aria-label="Scroll to latest message" title="Scroll to latest">
+                  <svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg>
+                </button>
+                <textarea id="question" rows="1" wrap="soft" placeholder="Ask about either document or the delta..." aria-label="Ask a question"></textarea>
                 <button type="submit" aria-label="Send question">
                   <svg viewBox="0 0 24 24"><path d="m5 12 14-7-5 14-2-6-7-1Zm7 1 7-8"/></svg>
                 </button>
