@@ -19,13 +19,14 @@ their reports:
 To demonstrate arbitrary uploads instead, select **New**, drag an older revision
 into **File A** and a newer revision into **File B**, then select
 **Compare documents**. Native PDF, scanned PDF, and DWG uploads are accepted.
+For complete DWG entity geometry, run `make dwg-setup` once before starting.
 
 ## 3. Inspect the result
 
 The workspace opens with grounded chat on the left and source review on the right.
 
 1. Select **Delta** and filter added, modified, or removed findings.
-2. Select a finding to open the cited source page with its exact region highlighted.
+2. Select a finding to open the cited source page or DWG layout with its exact region highlighted.
 3. Switch between **File A** and **File B**.
 4. Export the report as HTML, Markdown, JSON, or redline PDFs for both files.
 
@@ -63,3 +64,15 @@ The command prints the regression scorecard and writes
 - groundedness and evidence-backed citation accuracy: `1.0 / 1.0`;
 - BM25 retrieval recall@k / mean reciprocal rank: `1.0 / 0.8333`;
 - three labeled document pairs, including a scanned-PDF/OCR pair.
+
+## 7. Prove the DWG path
+
+```powershell
+make dwg-eval
+```
+
+This uses two real generated DWG files and verifies text, lines, circles, a
+control-valve block, a dimension, four layers, six labeled deltas, BM25
+retrieval, grounded chat, and citations. To see the drawing UI, upload
+`data/eval/dwg-geometry-a.dwg` and `data/eval/dwg-geometry-b.dwg`, then click a
+Delta finding or a chat citation.

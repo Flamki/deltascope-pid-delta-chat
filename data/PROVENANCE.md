@@ -21,3 +21,16 @@ The generator is deterministic. Expected changes and grounded questions are
 independently labeled in `eval/datasets/ground_truth.json`.
 It uses PyMuPDF's built-in fonts and suppresses generated document IDs, so the
 fixtures are byte-stable across repeated runs and do not depend on host fonts.
+
+## Generated real-DWG pair
+
+`dwg-geometry-a.dwg` and `dwg-geometry-b.dwg` are real AC1015 drawing files
+generated from `scripts/generate_dwg_samples.py`. The source geometry is
+declared in that script and converted with GNU LibreDWG's `dxf2dwg`.
+
+The base contains a pump, pipe, control-valve block, pressure note, tag, and
+dimension on four named layers. The revised drawing changes pressure,
+dimension/pipe length, and valve location and adds a PSV symbol/tag. Expected
+changes are independently declared by `eval/run_dwg_eval.py`. LibreDWG may emit
+different binary bookkeeping across runs, so the committed pair is the stable
+regression fixture and normal `make dwg-eval` does not regenerate it.

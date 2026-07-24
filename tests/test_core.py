@@ -14,7 +14,8 @@ from src.chat.answer import bm25_rank
 from src.chat.providers import _line_has_valid_citation
 from src.delta import compare_documents
 from src.ingest.router import AdapterRouter
-from src.markup import create_highlight_pdf, create_markup_pdf
+from src.ingest.dwg import DwgAdapter
+from src.markup import create_dwg_svg, create_highlight_pdf, create_markup_pdf
 
 
 def create_pdf(path: Path, lines: list[str]):
@@ -115,6 +116,32 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(document.format, "dwg")
         self.assertTrue(document.metadata["signature"].startswith("AC"))
         self.assertTrue(document.warnings)
+
+    @unittest.skipUnless(
+        DwgAdapter.converter_available()
+        and Path("data/eval/dwg-geometry-a.dwg").is_file()
+        and Path("data/eval/dwg-geometry-b.dwg").is_file(),
+        "real DWG geometry test requires LibreDWG and generated fixtures",
+    )
+    def test_real_dwg_geometry_layers_blocks_and_dimensions(self):
+        router = AdapterRouter()
+        base = router.ingest("PID-A", Path("data/eval/dwg-geometry-a.dwg"))
+        revised = router.ingest("PID-B", Path("data/eval/dwg-geometry-b.dwg"))
+        self.assertTrue(base.metadata["geometry_available"])
+        self.assertIn("PIPING", base.metadata["layers"])
+        self.assertGreaterEqual(base.metadata["entity_counts"]["DIMENSION"], 1)
+        report = compare_documents(base, revised)
+        descriptions = " ".join(finding["description"].lower() for finding in report["findings"])
+        self.assertIn("control_valve", descriptions)
+        self.assertIn("measurement=100", descriptions)
+        self.assertIn("measurement=110", descriptions)
+        self.assertTrue(any(finding["item_type"] == "geometry" for finding in report["findings"]))
+        highlighted = next(block for block in revised.blocks if "DESIGN PRESSURE 12" in block.text)
+        svg = create_dwg_svg(revised, highlighted.id)
+        self.assertIn(b"<svg", svg)
+        self.assertIn(b"citation-highlight", svg)
+        self.assertIn(highlighted.id.encode(), svg)
+        self.assertIn(b'id="cad-entities"', svg)
 
     def test_hosted_answer_requires_allowed_citation_per_line(self):
         allowed = {"D-0001", "PID-A-P1-B2"}

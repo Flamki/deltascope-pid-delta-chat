@@ -1,6 +1,7 @@
 __pycache__/
 *.py[cod]
 .venv/
+.tools/
 .agents/
 .playwright-mcp/
 .env
@@ -8,6 +9,8 @@ __pycache__/
 !.env.example
 artifacts/*.jsonl
 artifacts/*.json
+artifacts/*.png
+artifacts/*.svg
 artifacts/uploads/
 artifacts/reports/
 artifacts/api-upload-result.json

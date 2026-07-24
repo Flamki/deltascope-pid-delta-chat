@@ -20,7 +20,7 @@ from src.canonical import CanonicalDocument
 from src.chat import answer_question
 from src.delta import compare_documents
 from src.ingest.router import AdapterRouter
-from src.markup import create_highlight_pdf, create_markup_pdf
+from src.markup import create_dwg_svg, create_highlight_pdf, create_markup_pdf
 from src.observability import TraceStore
 
 ROOT = Path(__file__).parent.resolve()
@@ -491,7 +491,7 @@ class Handler(BaseHTTPRequestHandler):
                     "formats": {
                         "native_pdf": "ready",
                         "scanned_pdf": "ready",
-                        "dwg": "limited_without_geometry_converter",
+                        "dwg": "ready" if ROUTER.dwg.converter_available() else "fallback_without_converter",
                     },
                     "answer_provider": os.getenv("ANSWER_PROVIDER", "local-extractive-v2"),
                 }
@@ -512,6 +512,28 @@ class Handler(BaseHTTPRequestHandler):
             source = session.base_path if match.group(2) == "PID-A" else session.revised_path
             media = "application/pdf" if source.suffix.lower() == ".pdf" else "application/acad"
             return self.send_bytes(source.read_bytes(), media, disposition=f'inline; filename="{source.name[2:]}"')
+        match = re.fullmatch(r"/api/sessions/([^/]+)/documents/(PID-A|PID-B)/view\.svg", path)
+        if match:
+            session = self.get_session(match.group(1))
+            if not session:
+                return self.send_api_error("Session not found.", 404)
+            pid = match.group(2)
+            document = session.base if pid == "PID-A" else session.revised
+            if document.format != "dwg" or not document.metadata.get("geometry_available"):
+                return self.send_api_error("DWG geometry is unavailable for this document.", 422)
+            query = parse_qs(parsed.query)
+            block_id = (query.get("block_id") or [""])[0]
+            try:
+                page = int((query.get("page") or ["1"])[0])
+            except ValueError:
+                return self.send_api_error("Page must be an integer.", 422)
+            if block_id and not any(block.id == block_id for block in document.blocks):
+                return self.send_api_error("Citation block not found.", 404)
+            return self.send_bytes(
+                create_dwg_svg(document, block_id or None, page),
+                "image/svg+xml; charset=utf-8",
+                disposition=f'inline; filename="{pid.lower()}-drawing.svg"',
+            )
         match = re.fullmatch(r"/api/sessions/([^/]+)/documents/(PID-A|PID-B)/highlight", path)
         if match:
             session = self.get_session(match.group(1))

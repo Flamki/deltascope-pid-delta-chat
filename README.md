@@ -44,9 +44,15 @@ No model key is required for the deterministic fallback. The production chat pat
 |---|---|---|
 | Native PDF | End-to-end | PyMuPDF text blocks and exact bounding boxes |
 | Scanned PDF | End-to-end | 2x page rendering plus local RapidOCR/ONNX |
-| DWG | Accepted and indexed | Header, hash, metadata, and conservative recoverable-string extraction |
+| DWG | End-to-end with LibreDWG | Real layers, layouts, entities, blocks, dimensions, coordinates, and SVG citation view |
 
-DWG uploads work through the same canonical seam and can be compared and searched. Precise DWG entities, layers, blocks, and geometry need a LibreDWG or ODA converter. This limitation is surfaced in the document metadata and UI rather than hidden. The assignment requires two formats end-to-end; native and scanned PDF meet that core requirement. Full DWG entity support is the documented third-format extension.
+Run `make dwg-setup` once to install the official GNU LibreDWG Windows converter
+into the ignored `.tools/` directory. DWG uploads then pass through `dwg2dxf`
+and ezdxf, preserving layout, layer, entity type, block insertion, dimension
+measurement, and drawing coordinates. The workspace renders a local SVG
+drawing; clicking a finding or chat citation highlights its exact entity bounds.
+If the converter is not present, the adapter degrades explicitly to conservative
+recoverable-string indexing and reports that limitation in metadata and the UI.
 
 ## Architecture
 
@@ -199,6 +205,17 @@ the cited excerpt to contain the labeled supporting evidence; checking only for
 the presence of a citation ID is intentionally insufficient. The latest result
 is written to `artifacts/eval-scorecard.json`.
 
+Run the independent real-DWG regression:
+
+```powershell
+make dwg-eval
+```
+
+The committed pair contains actual AC1015 DWG files with text, a pump, piping,
+a control-valve block, a dimension, and an added PSV. The scorecard verifies
+geometry extraction, layers, six labeled changes, BM25 retrieval, grounded chat,
+and citations. It is written to `artifacts/dwg-eval-scorecard.json`.
+
 Run unit tests:
 
 ```powershell
@@ -224,15 +241,18 @@ uv run python -m unittest discover -s tests -v
   informed the trace/span structure. A dependency-light JSONL exporter is used
   for the take-home, with trace IDs and parent linkage kept compatible with a
   future OTLP exporter.
-- [GNU LibreDWG](https://www.gnu.org/software/libredwg/manual/LibreDWG.pdf) is the
-  documented extension path for full DWG entities and geometry; the current DWG
-  adapter intentionally remains conservative.
+- [GNU LibreDWG](https://www.gnu.org/software/libredwg/manual/LibreDWG.pdf)
+  provides the open-source `dwg2dxf` conversion stage. `make dwg-setup` downloads
+  the official release asset rather than committing platform binaries.
+- [ezdxf](https://ezdxf.readthedocs.io/en/stable/tutorials/getting_data.html)
+  supplies audited DXF recovery, layout iteration, entity queries, and bounding
+  boxes after conversion.
 
 ## Requirement matrix
 
 | Assignment requirement | Implementation |
 |---|---|
-| At least two formats | Native PDF and scanned PDF work end-to-end |
+| At least two formats | Native PDF, scanned PDF, and DWG work end-to-end |
 | One adapter interface | `FormatAdapter` and `AdapterRouter` |
 | Canonical representation | Located page/block model shared by all adapters |
 | Structured delta | Added, removed, modified, typed, located, described, confidence |
@@ -247,23 +267,27 @@ uv run python -m unittest discover -s tests -v
 | Metrics | Session latency, errors, LLM calls, retrieval hits, tokens, cost, and delta counts |
 | Runnable eval | `uv run python -m eval.run_eval` or `make eval` |
 | Failure reporting | README, scorecard, adapter warnings |
-| Samples | Three generated pairs with provenance in code |
+| Samples | Three PDF pairs plus a real-DWG geometry pair with provenance in code |
 | Secrets | ignored local `.env`, placeholder-only `.env.example`, and deterministic no-key fallback |
 | Walkthrough | `DEMO.md` |
 
 ## Honest limitations
 
-- Geometry-only changes and symbol topology are not detected.
+- Common 2D DWG entity and symbol-bound changes are detected, but semantic
+  connectivity/topology and proprietary proxy objects are not reconstructed.
 - OCR is slower and its bounding boxes are approximate.
 - Very noisy scans can split or confuse engineering labels.
-- Full DWG entity/geometry extraction needs a configured converter.
+- DWG 3D solids, advanced hatches, and unsupported/proxy entities may be reduced
+  to their type and bounding region; LibreDWG audit issues remain visible.
+- Full DWG geometry requires the open-source LibreDWG converter; without it the
+  application deliberately uses the lower-confidence string fallback.
 - Session persistence is local-disk/single-instance; horizontal deployment would move state to object storage plus a database.
 - The local answer provider is grounded and deterministic but less fluent than a generative LLM.
 
 ## What I would do next
 
-1. Add LibreDWG conversion and parse layers, blocks, dimensions, and entity coordinates.
-2. Register revision pages visually before geometry/symbol comparison.
-3. Add engineering-symbol detection and graph matching for P&IDs.
+1. Register revision layouts visually before geometry/symbol comparison.
+2. Add engineering-symbol detection and graph matching for P&ID connectivity.
+3. Expand the renderer for 3D solids, hatches, and proprietary proxy objects.
 4. Move persisted sessions to object storage plus Postgres for horizontal scale.
 5. Add a calibrated hybrid dense/sparse retriever after expanding the labeled retrieval set.

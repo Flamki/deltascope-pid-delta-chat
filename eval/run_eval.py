@@ -116,8 +116,8 @@ def run():
         },
         "pairs": pair_results,
         "known_failures": [
-            "DWG geometry and symbol changes require an external LibreDWG/ODA converter.",
-            "Dense P&ID vector-line changes without associated text are not detected.",
+            "Unsupported 3D solids and proprietary DWG proxy entities may be reduced to type and bounds.",
+            "Semantic P&ID connectivity and topology are not reconstructed from dense vector-line drawings.",
             "OCR bounding boxes are approximate and low-quality scans may split labels.",
         ],
     }

@@ -161,8 +161,15 @@ function switchDocument(tab, page = 1, highlightBlockId = "") {
   $("#viewer-label").textContent = `${tab} · ${document.filename}`;
   $("#page-label").textContent = `Page ${page} of ${document.metadata.page_count || document.pages.length}`;
   if (document.format === "dwg") {
-    $("#document-frame").classList.add("hidden");
-    $("#dwg-viewer").classList.remove("hidden");
+    if (document.metadata.geometry_available) {
+      $("#document-frame").classList.remove("hidden");
+      const query = new URLSearchParams({ page: String(page) });
+      if (highlightBlockId) query.set("block_id", highlightBlockId);
+      $("#document-frame").src = `/api/sessions/${state.session.id}/documents/${tab}/view.svg?${query}`;
+    } else {
+      $("#document-frame").classList.add("hidden");
+      $("#dwg-viewer").classList.remove("hidden");
+    }
   } else {
     $("#document-frame").classList.remove("hidden");
     const source = highlightBlockId
