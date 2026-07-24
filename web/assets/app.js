@@ -117,9 +117,11 @@ function renderWorkspace() {
   const a = session.documents["PID-A"], b = session.documents["PID-B"], report = session.report;
   $("#workspace-title").textContent = `${a.filename} → ${b.filename}`;
   $("#workspace-subtitle").textContent = `${a.format.replaceAll("_", " ")} · ${b.format.replaceAll("_", " ")}`;
+  $("#sidebar-current-title").textContent = `${a.filename} → ${b.filename}`;
   $("#tab-a-name").textContent = a.filename;
   $("#tab-b-name").textContent = b.filename;
   const total = Object.values(report.counts).reduce((sum, value) => sum + value, 0);
+  $("#sidebar-current-meta").textContent = `${total} findings · ${Math.round(report.alignment.score * 100)}% aligned`;
   $("#tab-delta-count").textContent = `${total} findings`;
   $("#count-total").textContent = total;
   $("#count-critical").textContent = report.findings.filter(finding => finding.severity === "critical").length;
@@ -243,7 +245,7 @@ $("#chat-form").addEventListener("submit", async event => {
       ? "Fireworks · grounded in both files + delta"
       : payload.provider_error
         ? "Grounded fallback · hosted model unavailable"
-        : "Local grounded fallback · both files + delta";
+        : "Grounded fallback · both files + delta";
     pending.remove(); addMessage("assistant", payload.answer, payload.citations);
   } catch (error) {
     pending.remove(); addMessage("assistant", `I could not complete that request: ${error.message}`);
@@ -270,10 +272,33 @@ async function loadObservability() {
   $("#trace-list").innerHTML = traceData.traces.map(trace => `<div class="trace-row"><span>${escapeHtml(trace.request)} · ${trace.trace_id.slice(0, 8)}</span><span>${trace.spans.map(span => escapeHtml(span.name)).join(" → ")}</span><span>${trace.duration_ms} ms</span><span class="trace-status ${trace.status}">${trace.status}</span></div>`).join("");
 }
 
-$("#observability-button").addEventListener("click", async () => {
+async function openObservability() {
   await loadObservability(); $("#observability-dialog").showModal();
-});
+}
+
+$("#observability-button").addEventListener("click", openObservability);
+$("#sidebar-observability").addEventListener("click", openObservability);
 $("#close-observability").addEventListener("click", () => $("#observability-dialog").close());
+
+function setSidebarCollapsed(collapsed) {
+  const shell = $("#workspace-shell");
+  const toggle = $("#sidebar-toggle");
+  shell.classList.toggle("sidebar-collapsed", collapsed);
+  toggle.setAttribute("aria-expanded", String(!collapsed));
+  toggle.setAttribute("aria-label", collapsed ? "Expand sidebar" : "Collapse sidebar");
+  localStorage.setItem("deltascope-sidebar-collapsed", collapsed ? "1" : "0");
+}
+
+setSidebarCollapsed(localStorage.getItem("deltascope-sidebar-collapsed") === "1");
+$("#sidebar-toggle").addEventListener("click", () => {
+  setSidebarCollapsed(!$("#workspace-shell").classList.contains("sidebar-collapsed"));
+});
+$("#sidebar-workspace").addEventListener("click", () => $("#question").focus());
+$("#sidebar-export").addEventListener("click", event => {
+  event.stopPropagation();
+  $(".export-popover").classList.add("open");
+  $("#export-button").focus();
+});
 
 function resetComparison() {
   state.session = null; state.files = { a: null, b: null }; state.activeTab = "PID-A";
@@ -305,7 +330,7 @@ async function initializeRuntime() {
       if (runtime.max_file_bytes) state.maxFileBytes = runtime.max_file_bytes;
     }
   } catch {
-    // Local defaults remain usable if the capability check is unavailable.
+    // Built-in defaults remain usable if the capability check is unavailable.
   }
   await restoreLatestComparison();
 }

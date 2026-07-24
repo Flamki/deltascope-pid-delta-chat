@@ -63,7 +63,7 @@
         <div class="upload-footer">
           <div class="security-note">
             <svg viewBox="0 0 24 24"><path d="M7 10V7a5 5 0 0 1 10 0v3m-11 0h12v10H6V10Z"/></svg>
-            Files stay in this local workspace. No account required.
+            Files are processed for this comparison. No account required.
           </div>
           <button class="primary-button" id="compare-button" type="submit" disabled>
             <span>Compare documents</span>
@@ -97,103 +97,145 @@
     </section>
 
     <section id="workspace-screen" class="screen workspace-screen">
-      <div class="workspace-summary glass">
-        <button class="new-button" id="new-comparison" aria-label="Start a new comparison">
-          <svg viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></svg>
-          <span>New</span>
-        </button>
-        <div class="document-pair">
-          <span class="mini-file" id="mini-a">Δ</span>
-          <div><strong id="workspace-title">Comparison</strong><span id="workspace-subtitle"></span></div>
-        </div>
-        <div class="summary-stats">
-          <span><b id="count-total">0</b> changes</span>
-          <span class="critical"><b id="count-critical">0</b> critical</span>
-          <span><b id="alignment-score">0%</b> alignment</span>
-        </div>
-        <div class="workspace-actions">
-          <span class="privacy-pill"><i></i> Local</span>
-          <button class="icon-button" id="observability-button" title="Observability" aria-label="Observability">
-            <svg viewBox="0 0 24 24"><path d="M4 19V9m5 10V5m6 14v-7m5 7V3"/></svg>
-          </button>
-          <div class="export-menu">
-            <button class="soft-button" id="export-button">Export <svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg></button>
-            <div class="export-popover glass">
-              <a id="export-html" target="_blank">Human-readable HTML</a>
-              <a id="export-json" target="_blank">Machine-readable JSON</a>
-              <a id="export-md" target="_blank">Markdown report</a>
-              <a id="export-markup-a" target="_blank">Redline PDF - File A</a>
-              <a id="export-markup-b" target="_blank">Redline PDF - File B</a>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="workspace-grid glass">
-        <section class="chat-pane">
-          <div class="pane-header">
-            <div><span class="ai-mark">✦</span><div><strong>Grounded chat</strong><small id="provider-label">PID-A + PID-B + delta report</small></div></div>
-            <span class="grounded-badge"><i></i> Cited answers</span>
-          </div>
-          <div class="chat-thread" id="chat-thread">
-            <div class="message assistant">
-              <div class="avatar">✦</div>
-              <div class="bubble">
-                <p>I have compared both documents. Ask about a specific change, page, tag, note, dimension, or either revision.</p>
-                <div class="starter-questions">
-                  <button>What are the most critical changes?</button>
-                  <button>Summarize what changed</button>
-                  <button>What appears only in File B?</button>
-                </div>
-              </div>
-            </div>
-          </div>
-          <form class="composer" id="chat-form">
-            <textarea id="question" rows="1" placeholder="Ask about either document or the delta..." aria-label="Ask a question"></textarea>
-            <button type="submit" aria-label="Send question">
-              <svg viewBox="0 0 24 24"><path d="m5 12 14-7-5 14-2-6-7-1Zm7 1 7-8"/></svg>
+      <div class="workspace-shell glass" id="workspace-shell">
+        <aside class="workspace-sidebar" aria-label="Workspace navigation">
+          <div class="sidebar-brand">
+            <span class="brand-mark" aria-hidden="true">&#916;</span>
+            <div class="brand-copy"><strong>DeltaScope</strong><span>Document intelligence</span></div>
+            <button class="sidebar-toggle" id="sidebar-toggle" type="button" aria-label="Collapse sidebar" aria-expanded="true">
+              <svg viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></svg>
             </button>
-            <span>Every factual answer includes source citations</span>
-          </form>
-        </section>
+          </div>
 
-        <section class="document-pane">
-          <div class="document-tabs" role="tablist">
-            <button class="document-tab active" data-tab="PID-A"><span>A</span><b>File A</b><small id="tab-a-name"></small></button>
-            <button class="document-tab" data-tab="PID-B"><span>B</span><b>File B</b><small id="tab-b-name"></small></button>
-            <button class="document-tab delta-tab" data-tab="DELTA"><span>Δ</span><b>Delta</b><small id="tab-delta-count"></small></button>
-          </div>
-          <div class="viewer-toolbar">
-            <div id="viewer-label">File A</div>
-            <div class="viewer-tools">
-              <span id="page-label">Page 1</span>
-              <button id="open-document" title="Open source in new tab"><svg viewBox="0 0 24 24"><path d="M14 5h5v5M12 12l7-7M19 14v5H5V5h5"/></svg></button>
+          <nav class="sidebar-nav">
+            <span class="sidebar-section-label">Workspace</span>
+            <button class="side-nav-item primary-nav" id="new-comparison" type="button" title="New comparison">
+              <span class="side-icon"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>
+              <span class="nav-copy"><b>New comparison</b><small>Upload two revisions</small></span>
+            </button>
+            <button class="side-nav-item active" id="sidebar-workspace" type="button" title="Review workspace">
+              <span class="side-icon"><svg viewBox="0 0 24 24"><path d="M4 5h6v14H4zM14 5h6v14h-6z"/></svg></span>
+              <span class="nav-copy"><b>Review workspace</b><small>Chat and document</small></span>
+            </button>
+            <button class="side-nav-item" id="sidebar-observability" type="button" title="Activity">
+              <span class="side-icon"><svg viewBox="0 0 24 24"><path d="M4 19V9m5 10V5m6 14v-7m5 7V3"/></svg></span>
+              <span class="nav-copy"><b>Activity</b><small>Traces and metrics</small></span>
+            </button>
+            <button class="side-nav-item" id="sidebar-export" type="button" title="Reports">
+              <span class="side-icon"><svg viewBox="0 0 24 24"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></svg></span>
+              <span class="nav-copy"><b>Reports</b><small>Export and redlines</small></span>
+            </button>
+          </nav>
+
+          <div class="sidebar-context">
+            <span class="sidebar-section-label">Current comparison</span>
+            <div class="current-comparison">
+              <span class="current-file">&#916;</span>
+              <div><strong id="sidebar-current-title">Comparison</strong><small id="sidebar-current-meta">Preparing workspace</small></div>
             </div>
           </div>
-          <div class="viewer-stage" id="viewer-stage">
-            <iframe id="document-frame" title="Uploaded document"></iframe>
-            <div class="dwg-viewer hidden" id="dwg-viewer">
-              <span class="dwg-icon">DWG</span>
-              <h3>DWG fallback indexing active</h3>
-              <p>Install the official LibreDWG converter with <code>make dwg-setup</code> to render layers, geometry, blocks, dimensions, and exact citation highlights.</p>
+
+          <div class="sidebar-status"><i></i><span>Citations enforced</span></div>
+        </aside>
+
+        <div class="workspace-main">
+          <header class="workspace-summary">
+            <div class="document-pair">
+              <div>
+                <span class="summary-overline">Active comparison</span>
+                <strong id="workspace-title">Comparison</strong>
+                <span id="workspace-subtitle"></span>
+              </div>
             </div>
-            <div class="delta-viewer hidden" id="delta-viewer">
-              <div class="delta-controls">
-                <div class="alignment-banner" id="alignment-banner"></div>
-                <div class="delta-filter-row">
-                  <div class="delta-filters">
-                    <button class="active" data-filter="all">All</button>
-                    <button data-filter="modified">Modified</button>
-                    <button data-filter="added">Added</button>
-                    <button data-filter="removed">Removed</button>
-                  </div>
-                  <span class="review-count" id="review-count">0 findings</span>
+            <div class="summary-stats" aria-label="Comparison statistics">
+              <span><b id="count-total">0</b><small>Changes</small></span>
+              <span class="critical"><b id="count-critical">0</b><small>Critical</small></span>
+              <span><b id="alignment-score">0%</b><small>Alignment</small></span>
+            </div>
+            <div class="workspace-actions">
+              <button class="icon-button" id="observability-button" title="Observability" aria-label="Open observability">
+                <svg viewBox="0 0 24 24"><path d="M4 19V9m5 10V5m6 14v-7m5 7V3"/></svg>
+              </button>
+              <div class="export-menu">
+                <button class="soft-button" id="export-button">Export <svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg></button>
+                <div class="export-popover glass">
+                  <a id="export-html" target="_blank">Human-readable HTML</a>
+                  <a id="export-json" target="_blank">Machine-readable JSON</a>
+                  <a id="export-md" target="_blank">Markdown report</a>
+                  <a id="export-markup-a" target="_blank">Redline PDF - File A</a>
+                  <a id="export-markup-b" target="_blank">Redline PDF - File B</a>
                 </div>
               </div>
-              <div class="finding-list" id="finding-list"></div>
             </div>
+          </header>
+
+          <div class="workspace-grid">
+            <section class="chat-pane">
+              <div class="pane-header">
+                <div><span class="ai-mark">&#10022;</span><div><strong>Grounded chat</strong><small id="provider-label">Both files + delta report</small></div></div>
+                <span class="grounded-badge"><i></i> Cited answers</span>
+              </div>
+              <div class="chat-thread" id="chat-thread">
+                <div class="message assistant">
+                  <div class="avatar">&#10022;</div>
+                  <div class="bubble">
+                    <p>I have compared both documents. Ask about a specific change, page, tag, note, dimension, or either revision.</p>
+                    <div class="starter-questions">
+                      <button>What are the most critical changes?</button>
+                      <button>Summarize what changed</button>
+                      <button>What appears only in File B?</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <form class="composer" id="chat-form">
+                <textarea id="question" rows="1" placeholder="Ask about either document or the delta..." aria-label="Ask a question"></textarea>
+                <button type="submit" aria-label="Send question">
+                  <svg viewBox="0 0 24 24"><path d="m5 12 14-7-5 14-2-6-7-1Zm7 1 7-8"/></svg>
+                </button>
+                <span>Every factual answer includes source citations</span>
+              </form>
+            </section>
+
+            <section class="document-pane">
+              <div class="document-tabs" role="tablist">
+                <button class="document-tab active" data-tab="PID-A"><span>A</span><b>File A</b><small id="tab-a-name"></small></button>
+                <button class="document-tab" data-tab="PID-B"><span>B</span><b>File B</b><small id="tab-b-name"></small></button>
+                <button class="document-tab delta-tab" data-tab="DELTA"><span>&#916;</span><b>Delta</b><small id="tab-delta-count"></small></button>
+              </div>
+              <div class="viewer-toolbar">
+                <div id="viewer-label">File A</div>
+                <div class="viewer-tools">
+                  <span id="page-label">Page 1</span>
+                  <button id="open-document" title="Open source in new tab"><svg viewBox="0 0 24 24"><path d="M14 5h5v5M12 12l7-7M19 14v5H5V5h5"/></svg></button>
+                </div>
+              </div>
+              <div class="viewer-stage" id="viewer-stage">
+                <iframe id="document-frame" title="Uploaded document"></iframe>
+                <div class="dwg-viewer hidden" id="dwg-viewer">
+                  <span class="dwg-icon">DWG</span>
+                  <h3>DWG fallback indexing active</h3>
+                  <p>Install the official LibreDWG converter with <code>make dwg-setup</code> to render layers, geometry, blocks, dimensions, and exact citation highlights.</p>
+                </div>
+                <div class="delta-viewer hidden" id="delta-viewer">
+                  <div class="delta-controls">
+                    <div class="alignment-banner" id="alignment-banner"></div>
+                    <div class="delta-filter-row">
+                      <div class="delta-filters">
+                        <button class="active" data-filter="all">All</button>
+                        <button data-filter="modified">Modified</button>
+                        <button data-filter="added">Added</button>
+                        <button data-filter="removed">Removed</button>
+                      </div>
+                      <span class="review-count" id="review-count">0 findings</span>
+                    </div>
+                  </div>
+                  <div class="finding-list" id="finding-list"></div>
+                </div>
+              </div>
+            </section>
           </div>
-        </section>
+        </div>
       </div>
     </section>
   </main>
