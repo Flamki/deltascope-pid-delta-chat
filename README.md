@@ -4,6 +4,10 @@ DeltaScope is an upload-first platform for comparing engineering document revisi
 
 The UI intentionally has no authentication. The assignment does not ask for accounts, and adding them would distract from ingestion, alignment, evaluation, and grounding.
 
+For a precise separation between the working take-home system and the
+additional controls required for enterprise deployment, see
+[`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md).
+
 ## Run
 
 ```powershell

@@ -76,20 +76,35 @@ function animateAnalysis() {
     [88, "Building grounded retrieval", "Indexing both PIDs and the delta report for cited answers."]
   ];
   let index = 0;
+  $("#progress-bar").style.width = `${steps[0][0]}%`;
+  $("#analysis-percent").textContent = `${steps[0][0]}%`;
+  $("#analysis-stage-label").textContent = `Stage 1 of ${steps.length}`;
+  $$(".analysis-steps div").forEach((element, itemIndex) => element.classList.toggle("active", itemIndex === 0));
   const timer = setInterval(() => {
     const step = steps[Math.min(index, steps.length - 1)];
     $("#progress-bar").style.width = `${step[0]}%`;
+    $("#analysis-percent").textContent = `${step[0]}%`;
+    $("#analysis-stage-label").textContent = `Stage ${Math.min(index + 1, steps.length)} of ${steps.length}`;
     $("#analysis-heading").textContent = step[1];
     $("#analysis-copy").textContent = step[2];
     $$(".analysis-steps div").forEach((element, itemIndex) => element.classList.toggle("active", itemIndex <= index));
     index += 1;
   }, 650);
-  return () => { clearInterval(timer); $("#progress-bar").style.width = "100%"; };
+  return () => {
+    clearInterval(timer);
+    $("#progress-bar").style.width = "100%";
+    $("#analysis-percent").textContent = "100%";
+    $("#analysis-stage-label").textContent = "Comparison ready";
+  };
 }
 
 $("#upload-form").addEventListener("submit", async event => {
   event.preventDefault();
   if (!state.files.a || !state.files.b) return;
+  $("#analysis-file-a").textContent = state.files.a.name;
+  $("#analysis-file-b").textContent = state.files.b.name;
+  $("#analysis-format-a").textContent = `${state.files.a.name.split(".").pop().toUpperCase()} · base revision`;
+  $("#analysis-format-b").textContent = `${state.files.b.name.split(".").pop().toUpperCase()} · revised`;
   showScreen("analysis-screen");
   const stopAnimation = animateAnalysis();
   const data = new FormData();
