@@ -71,7 +71,7 @@ main{min-height:100vh}.screen{display:none;min-height:100vh}.screen.active{displ
 .icon-button,.soft-button{height:38px;border-color:rgba(73,103,140,.14);background:rgba(255,255,255,.66);border-radius:11px;box-shadow:0 4px 14px rgba(46,77,115,.04)}
 .soft-button{font-size:11px;font-weight:580}
 .workspace-grid{min-height:0;border-radius:0;display:grid;grid-template-columns:clamp(360px,31.5vw,520px) minmax(0,1fr);overflow:hidden;background:transparent;box-shadow:none;border:0}
-.chat-pane{grid-template-rows:64px minmax(0,1fr) 92px;background:linear-gradient(160deg,rgba(251,253,255,.74),rgba(246,250,255,.46));border-right:1px solid rgba(73,102,136,.14)}
+.chat-pane{grid-template-rows:64px minmax(0,1fr) auto;background:linear-gradient(160deg,rgba(251,253,255,.74),rgba(246,250,255,.46));border-right:1px solid rgba(73,102,136,.14)}
 .pane-header{padding:0 17px;background:rgba(255,255,255,.3)}
 .pane-header strong{font-size:13px}
 .pane-header small{max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -84,9 +84,21 @@ main{min-height:100vh}.screen{display:none;min-height:100vh}.screen.active{displ
 .message.user .bubble{max-width:86%}
 .starter-questions{gap:6px;margin-top:13px}
 .starter-questions button{padding:7px 10px;font-size:10px;text-align:left}
-.composer{padding:11px 12px}
-.composer textarea{height:46px;padding-top:13px;font-size:12px}
-.composer>button{top:18px}
+.composer{min-height:88px;padding:11px 12px 8px;background:linear-gradient(180deg,rgba(248,251,255,.74),rgba(255,255,255,.86));box-shadow:0 -12px 30px rgba(50,78,111,.035)}
+.composer textarea{display:block;height:46px;min-height:46px;max-height:150px;overflow-y:hidden;padding:13px 50px 12px 15px;font-size:12px;line-height:1.55;border-radius:17px;border-color:rgba(61,105,158,.2);background:rgba(255,255,255,.9);box-shadow:0 8px 24px rgba(37,77,124,.055),inset 0 1px 2px rgba(31,64,104,.025);scrollbar-width:thin;scrollbar-color:#9cb8da transparent;transition:border-color .16s,box-shadow .16s}
+.composer textarea::-webkit-scrollbar{width:8px}
+.composer textarea::-webkit-scrollbar-track{background:transparent;margin:8px 0}
+.composer textarea::-webkit-scrollbar-thumb{background:#abc2df;border:2px solid transparent;background-clip:padding-box;border-radius:999px}
+.composer textarea:focus{border-color:rgba(40,119,240,.58);box-shadow:0 0 0 3px rgba(40,119,240,.09),0 10px 26px rgba(37,77,124,.07)}
+.composer>button{top:auto;right:19px;bottom:31px;width:36px;height:36px;border-radius:12px;box-shadow:0 8px 18px rgba(36,111,218,.22);transition:transform .16s,box-shadow .16s}
+.composer>button:hover{transform:translateY(-1px);box-shadow:0 10px 22px rgba(36,111,218,.28)}
+.composer>button:active{transform:translateY(0) scale(.97)}
+.composer-meta{min-height:17px;margin-top:5px;padding:0 4px;display:flex!important;align-items:center;justify-content:space-between;color:#94a1b1!important;font-size:7.5px!important;text-align:left!important;white-space:nowrap}
+.composer-meta>span{display:flex;align-items:center;gap:4px}
+.composer-meta kbd{font:inherit;color:#75869a;background:rgba(234,241,249,.8);border:1px solid rgba(88,115,146,.12);border-radius:4px;padding:2px 4px;box-shadow:0 1px 0 rgba(61,84,111,.08)}
+.composer-meta>span i{font-style:normal;color:#b2bdc9}
+.composer-meta em{display:flex;align-items:center;gap:5px;color:#758d82;font-style:normal}
+.composer-meta em i{width:5px;height:5px;border-radius:50%;background:var(--success);box-shadow:0 0 0 3px rgba(25,166,111,.08)}
 .document-pane{grid-template-rows:64px 42px minmax(0,1fr);background:rgba(237,243,250,.54)}
 .document-tabs{padding:0 8px;background:rgba(255,255,255,.36)}
 .document-tab{padding:9px 10px}
@@ -143,6 +155,7 @@ main{min-height:100vh}.screen{display:none;min-height:100vh}.screen.active{displ
   .workspace-actions .icon-button{display:none}
   .document-pair{max-width:62vw}
   .grounded-badge{display:none}
+  .composer-meta>span{display:none}
   .chat-pane{height:470px}
   .document-pane{height:620px}
 }

@@ -229,11 +229,29 @@ function addMessage(role, content, citations = []) {
   return element;
 }
 
+const questionField = $("#question");
+
+function resizeQuestionField() {
+  questionField.style.height = "auto";
+  const maximumHeight = Number.parseFloat(getComputedStyle(questionField).maxHeight) || 150;
+  const nextHeight = Math.min(questionField.scrollHeight, maximumHeight);
+  questionField.style.height = `${nextHeight}px`;
+  questionField.style.overflowY = questionField.scrollHeight > maximumHeight ? "auto" : "hidden";
+}
+
+questionField.addEventListener("input", resizeQuestionField);
+questionField.addEventListener("keydown", event => {
+  if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+    event.preventDefault();
+    if (questionField.value.trim()) $("#chat-form").requestSubmit();
+  }
+});
+
 $("#chat-form").addEventListener("submit", async event => {
   event.preventDefault();
   const field = $("#question"), question = field.value.trim();
   if (!question || !state.session) return;
-  addMessage("user", question); field.value = "";
+  addMessage("user", question); field.value = ""; resizeQuestionField();
   const pending = addMessage("assistant", "Searching both documents and the delta report...");
   try {
     const response = await fetch(`/api/sessions/${state.session.id}/chat`, {
