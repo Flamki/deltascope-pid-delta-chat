@@ -23,6 +23,7 @@ from src.delta import compare_documents
 from src.ingest.router import AdapterRouter
 from src.markup import create_dwg_svg, create_highlight_pdf, create_markup_pdf
 from src.observability import TraceStore
+from src.storage import DurableStore
 
 SOURCE_ROOT = Path(__file__).parent.resolve()
 IS_VERCEL = bool(os.getenv("VERCEL"))
@@ -58,7 +59,8 @@ REPORTS.mkdir(parents=True, exist_ok=True)
 trace_path = Path(os.getenv("TRACE_PATH", "artifacts/traces.jsonl"))
 if not trace_path.is_absolute():
     trace_path = STORAGE_ROOT / trace_path
-TRACE_STORE = TraceStore(trace_path)
+DURABLE_STORE = DurableStore()
+TRACE_STORE = TraceStore(trace_path, durable_store=DURABLE_STORE)
 ROUTER = AdapterRouter()
 SESSIONS: dict[str, "ComparisonSession"] = {}
 SESSION_LOCK = threading.Lock()
@@ -114,12 +116,8 @@ def safe_filename(value: str, fallback: str) -> str:
     return cleaned or fallback
 
 
-def write_report_files(session: ComparisonSession):
-    target = REPORTS / session.id
-    target.mkdir(parents=True, exist_ok=True)
-    payload = session.summary()
-    (target / "report.json").write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-    state = {
+def session_state(session: ComparisonSession) -> dict:
+    return {
         "id": session.id,
         "created_at": session.created_at,
         "base_path": str(session.base_path.relative_to(STORAGE_ROOT)),
@@ -128,7 +126,14 @@ def write_report_files(session: ComparisonSession):
         "revised": session.revised.to_dict(),
         "report": session.report,
     }
-    (target / "session.json").write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+
+def write_report_files(session: ComparisonSession):
+    target = REPORTS / session.id
+    target.mkdir(parents=True, exist_ok=True)
+    payload = session.summary()
+    (target / "report.json").write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    (target / "session.json").write_text(json.dumps(session_state(session), ensure_ascii=False), encoding="utf-8")
     counts = session.report["counts"]
     lines = [
         f"# Delta report: {session.base.filename} vs {session.revised.filename}",
@@ -225,7 +230,7 @@ def parse_multipart(headers, stream) -> dict[str, tuple[str, bytes]]:
 
 
 def build_session(base_upload: tuple[str, bytes], revised_upload: tuple[str, bytes]) -> tuple[ComparisonSession, dict]:
-    session_id = f"CMP-{uuid.uuid4().hex[:10].upper()}"
+    session_id = f"CMP-{uuid.uuid4().hex[:24].upper()}"
     trace = TRACE_STORE.start("compare", session_id)
     folder = UPLOADS / session_id
     folder.mkdir(parents=True, exist_ok=True)
@@ -292,6 +297,21 @@ def build_session(base_upload: tuple[str, bytes], revised_upload: tuple[str, byt
         started = time.perf_counter()
         write_report_files(session)
         TRACE_STORE.span(trace, "report", started, formats=["json", "markdown", "html", "markup_pdf"])
+        started = time.perf_counter()
+        DURABLE_STORE.save_session(
+            session.id,
+            session_state(session),
+            base_bytes,
+            revised_bytes,
+            base_path.suffix,
+            revised_path.suffix,
+        )
+        TRACE_STORE.span(
+            trace,
+            "durable_storage",
+            started,
+            backend="vercel-private-blob" if DURABLE_STORE.enabled else "local-disk",
+        )
         trace["telemetry"] = {
             "model": "deterministic-delta-v2",
             "input_tokens": 0,
@@ -369,6 +389,41 @@ def restore_sessions(limit: int = 20) -> int:
     return restored
 
 
+def restore_durable_session(session_id: str) -> ComparisonSession | None:
+    """Restore one private-blob session into the current serverless instance."""
+
+    if not DURABLE_STORE.enabled or not re.fullmatch(r"CMP-[A-F0-9]{10,32}", session_id):
+        return None
+    loaded = DURABLE_STORE.load_session(session_id)
+    if loaded is None:
+        return None
+    state, base_content, revised_content = loaded
+    base_name = safe_filename(state["base"]["filename"], "document-a.pdf")
+    revised_name = safe_filename(state["revised"]["filename"], "document-b.pdf")
+    folder = UPLOADS / session_id
+    folder.mkdir(parents=True, exist_ok=True)
+    base_path = folder / f"A-{base_name}"
+    revised_path = folder / f"B-{revised_name}"
+    base_path.write_bytes(base_content)
+    revised_path.write_bytes(revised_content)
+    session = ComparisonSession(
+        id=state["id"],
+        created_at=float(state["created_at"]),
+        base_path=base_path,
+        revised_path=revised_path,
+        base=CanonicalDocument.from_dict(state["base"]),
+        revised=CanonicalDocument.from_dict(state["revised"]),
+        report=state["report"],
+    )
+    write_report_files(session)
+    with SESSION_LOCK:
+        existing = SESSIONS.get(session_id)
+        if existing:
+            return existing
+        SESSIONS[session_id] = session
+    return session
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "DeltaScope/2.0"
 
@@ -411,7 +466,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def get_session(self, session_id: str) -> ComparisonSession | None:
         with SESSION_LOCK:
-            return SESSIONS.get(session_id)
+            session = SESSIONS.get(session_id)
+        return session or restore_durable_session(session_id)
 
     def do_POST(self):
         path = urlparse(self.path).path
@@ -521,7 +577,8 @@ class Handler(BaseHTTPRequestHandler):
                 {
                     "status": "ok",
                     "runtime": "vercel-serverless" if IS_VERCEL else "local",
-                    "storage": "ephemeral-/tmp" if IS_VERCEL else "local-disk",
+                    "storage": "vercel-private-blob" if DURABLE_STORE.enabled else "local-disk",
+                    "durable_storage": DURABLE_STORE.enabled,
                     "max_file_bytes": MAX_FILE_BYTES,
                     "max_comparison_bytes": MAX_COMPARISON_BYTES,
                     "formats": {
@@ -599,12 +656,16 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/sessions/([^/]+)/report\.(json|md|html)", path)
         if match:
             session_id, extension = match.groups()
+            if not self.get_session(session_id):
+                return self.send_api_error("Session not found.", 404)
             target = REPORTS / session_id / f"report.{extension}"
             media = {"json": "application/json", "md": "text/markdown; charset=utf-8", "html": "text/html; charset=utf-8"}[extension]
             return self.serve_file(target, media)
         match = re.fullmatch(r"/api/sessions/([^/]+)/markup/(PID-A|PID-B)\.pdf", path)
         if match:
             session_id, pid = match.groups()
+            if not self.get_session(session_id):
+                return self.send_api_error("Session not found.", 404)
             target = REPORTS / session_id / ("markup-pid-a.pdf" if pid == "PID-A" else "markup-pid-b.pdf")
             return self.serve_file(target, "application/pdf")
         match = re.fullmatch(r"/api/sessions/([^/]+)/traces", path)

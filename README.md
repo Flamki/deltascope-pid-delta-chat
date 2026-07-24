@@ -196,9 +196,13 @@ validation are timed where they actually execute inside the chat layer. The
 request handler records those measured durations; it does not infer stage
 timings from the duration of the outer call.
 
-Completed canonical documents, reports, and source paths are persisted under the
-ignored artifacts directory. The server restores the 20 most recent sessions on
-startup without repeating OCR or LLM calls.
+Completed canonical documents, reports, source files, and traces are persisted
+under the ignored artifacts directory for local runs. When
+`BLOB_READ_WRITE_TOKEN` is present, the same session state, source bytes, and
+per-request traces are also written to private Vercel Blob storage. A cold or
+different serverless instance restores the requested session on demand without
+repeating OCR, delta generation, or an LLM call; `/tmp` is only a materialized
+working cache.
 
 ## Evaluation
 
@@ -319,10 +323,12 @@ uv run python -m unittest discover -s tests -v
   to their type and bounding region; LibreDWG audit issues remain visible.
 - Full DWG geometry requires the open-source LibreDWG converter; without it the
   application deliberately uses the lower-confidence string fallback.
-- The Vercel deployment uses ephemeral `/tmp` session storage. It is suitable
-  for the take-home demonstration; durable multi-instance production would put
-  source files and session state in object storage plus a database.
-- Session persistence is local-disk/single-instance; horizontal deployment would move state to object storage plus a database.
+- The Vercel deployment durably stores private source files, canonical session
+  state, and traces in Vercel Blob. It still lacks lifecycle/retention policy,
+  authenticated multi-user ownership, and a transactional review database.
+- Comparisons execute synchronously in one function request. Large multi-sheet
+  workloads still require a durable queue, idempotent jobs, and resumable page
+  processing.
 - The local answer provider is grounded and deterministic but less fluent than a generative LLM.
 
 ## What I would do next

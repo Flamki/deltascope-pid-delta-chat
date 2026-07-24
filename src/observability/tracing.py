@@ -8,10 +8,11 @@ from pathlib import Path
 
 
 class TraceStore:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, durable_store=None):
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.lock = threading.Lock()
+        self.durable_store = durable_store
 
     def start(self, request: str, session_id: str | None = None) -> dict:
         return {
@@ -54,8 +55,12 @@ class TraceStore:
         with self.lock:
             with self.path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(trace, ensure_ascii=False) + "\n")
+        if self.durable_store and self.durable_store.enabled:
+            self.durable_store.save_trace(trace)
 
     def list(self, session_id: str | None = None, limit: int = 50) -> list[dict]:
+        if session_id and self.durable_store and self.durable_store.enabled:
+            return list(reversed(self.durable_store.list_traces(session_id, limit)))
         if not self.path.exists():
             return []
         rows = []

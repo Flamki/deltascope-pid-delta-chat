@@ -109,6 +109,7 @@ $("#upload-form").addEventListener("submit", async event => {
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "Comparison failed.");
     state.session = payload;
+    localStorage.setItem("deltascope-session-id", payload.id);
     localStorage.removeItem("deltascope-skip-restore");
     stopAnimation();
     await new Promise(resolve => setTimeout(resolve, 420));
@@ -300,10 +301,12 @@ $$(".starter-questions button").forEach(button => button.addEventListener("click
 }));
 
 async function loadObservability() {
-  const [metrics, traceData] = await Promise.all([
-    fetch(`/api/sessions/${state.session.id}/metrics`).then(response => response.json()),
-    fetch(`/api/sessions/${state.session.id}/traces`).then(response => response.json())
+  const [metricsResponse, tracesResponse] = await Promise.all([
+    fetch(`/api/sessions/${state.session.id}/metrics`),
+    fetch(`/api/sessions/${state.session.id}/traces`)
   ]);
+  if (!metricsResponse.ok || !tracesResponse.ok) throw new Error("Telemetry is temporarily unavailable.");
+  const [metrics, traceData] = await Promise.all([metricsResponse.json(), tracesResponse.json()]);
   const cards = [
     ["Requests", metrics.requests],
     ["Avg latency", `${metrics.avg_latency_ms} ms`],
@@ -312,11 +315,19 @@ async function loadObservability() {
     ["Model cost", `$${Number(metrics.estimated_cost_usd).toFixed(4)}`]
   ];
   $("#metric-grid").innerHTML = cards.map(([label, value]) => `<div class="metric-card"><span>${label}</span><b>${value}</b></div>`).join("");
-  $("#trace-list").innerHTML = traceData.traces.map(trace => `<div class="trace-row"><span>${escapeHtml(trace.request)} · ${trace.trace_id.slice(0, 8)}</span><span>${trace.spans.map(span => escapeHtml(span.name)).join(" → ")}</span><span>${trace.duration_ms} ms</span><span class="trace-status ${trace.status}">${trace.status}</span></div>`).join("");
+  $("#trace-list").innerHTML = traceData.traces.length
+    ? traceData.traces.map(trace => `<div class="trace-row"><span>${escapeHtml(trace.request)} · ${trace.trace_id.slice(0, 8)}</span><span>${trace.spans.map(span => escapeHtml(span.name)).join(" → ")}</span><span>${trace.duration_ms} ms</span><span class="trace-status ${trace.status}">${trace.status}</span></div>`).join("")
+    : '<div class="trace-row"><span>Telemetry unavailable</span><span>No persisted trace was found.</span><span>—</span><span class="trace-status error">missing</span></div>';
 }
 
 async function openObservability() {
-  await loadObservability(); $("#observability-dialog").showModal();
+  try {
+    await loadObservability();
+  } catch (error) {
+    $("#metric-grid").innerHTML = '<div class="metric-card"><span>Status</span><b>Unavailable</b></div>';
+    $("#trace-list").innerHTML = `<div class="trace-row"><span>Telemetry error</span><span>${escapeHtml(error.message)}</span><span>—</span><span class="trace-status error">error</span></div>`;
+  }
+  $("#observability-dialog").showModal();
 }
 
 $("#observability-button").addEventListener("click", openObservability);
@@ -346,6 +357,7 @@ $("#sidebar-export").addEventListener("click", event => {
 function resetComparison() {
   state.session = null; state.files = { a: null, b: null }; state.activeTab = "PID-A";
   localStorage.setItem("deltascope-skip-restore", "1");
+  localStorage.removeItem("deltascope-session-id");
   $("#file-a").value = ""; $("#file-b").value = ""; setFile("a", null); setFile("b", null);
   $("#chat-thread").querySelectorAll(".message:not(:first-child)").forEach(message => message.remove());
   chatThread.scrollTop = 0;
@@ -357,9 +369,12 @@ $("#new-comparison").addEventListener("click", resetComparison);
 async function restoreLatestComparison() {
   if (localStorage.getItem("deltascope-skip-restore") === "1") return;
   try {
-    const response = await fetch("/api/sessions/latest");
+    const sessionId = localStorage.getItem("deltascope-session-id");
+    const endpoint = sessionId ? `/api/sessions/${encodeURIComponent(sessionId)}` : "/api/sessions/latest";
+    const response = await fetch(endpoint);
     if (!response.ok) return;
     state.session = await response.json();
+    localStorage.setItem("deltascope-session-id", state.session.id);
     renderWorkspace();
     showScreen("workspace-screen");
   } catch {

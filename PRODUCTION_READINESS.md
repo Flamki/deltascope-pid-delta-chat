@@ -16,6 +16,9 @@ enterprise production system for safety-critical engineering decisions.
   JSON, Markdown, HTML, and visual redlines.
 - Structured request traces expose ingestion, alignment, delta, retrieval,
   provider, and answer latency plus token and cost telemetry.
+- Private Vercel Blob storage durably retains uploaded sources, canonical
+  session state, and per-request traces across cold starts and serverless
+  instances. Local runs retain the filesystem implementation.
 - The labeled evaluation gate covers native PDF, scanned PDF/OCR, moved layout,
   grounded chat, citation evidence, retrieval, and real DWG geometry.
 
@@ -27,10 +30,11 @@ enterprise production system for safety-critical engineering decisions.
 - The labeled corpus is intentionally small and mostly deterministic. It does
   not establish performance across different EPCs, owner/operator standards,
   scan quality, symbol libraries, languages, or revision conventions.
-- The hosted demonstration uses request-size limits and ephemeral storage.
-  Production requires object storage, durable job and result state, resumable
-  asynchronous processing, retention controls, encryption, access control, and
-  audit policy.
+- The hosted demonstration uses request-size limits and private durable object
+  storage, but comparisons still run synchronously. Enterprise operation still
+  requires resumable asynchronous jobs, retention/deletion controls,
+  authenticated ownership, a transactional review database, and an audit
+  policy.
 - Confidence values are heuristic rather than calibrated on an independently
   labeled production corpus.
 - Human review remains mandatory for low-alignment comparisons and
@@ -40,10 +44,11 @@ enterprise production system for safety-critical engineering decisions.
 
 ### 1. Durable execution
 
-Move originals, rendered pages, canonical blocks, and overlays to object
-storage; store comparison, job, and review state in Postgres; process pages
-through a durable queue with idempotent content hashes. Export traces through
-the OpenTelemetry SDK and an OTLP collector instead of relying only on JSONL.
+Keep the implemented private object storage for originals, canonical blocks,
+and traces; add Postgres for comparison, job, retention, and review state.
+Process pages through a durable queue with idempotent content hashes. Export
+traces through the OpenTelemetry SDK and an OTLP collector instead of relying
+on JSONL/private objects.
 
 Reference: [OpenTelemetry Python instrumentation](https://opentelemetry.io/docs/languages/python/instrumentation/).
 

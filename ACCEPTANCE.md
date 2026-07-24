@@ -33,6 +33,7 @@ evidence. Bonus items are listed separately.
 | Structured logs and correlation ID | Pass | JSON access logs with request ID; trace JSONL with trace and comparison session IDs |
 | Inspectable metrics | Pass | Session metrics API and observability dialog |
 | Failure visibility | Pass | Provider/OCR/ingestion errors are retained in traces; hosted-model failure safely falls back |
+| Serverless durability | Pass | Private Vercel Blob retains source bytes, canonical session state, and per-request traces across instances |
 
 ## Evaluation
 
@@ -57,6 +58,7 @@ evidence. Bonus items are listed separately.
 | Config over hardcoding | Pass | Environment-selected provider/model/costs, delta thresholds, demo paths, and trace path |
 | No committed secrets | Pass | `.env` and `.env.*` ignored; `.env.example` contains placeholders |
 | Reproducible dependency set | Pass | Pinned project constraints plus committed `uv.lock` |
+| Durable hosted state | Pass | Private object storage with on-demand cold-start restoration; local disk remains the offline fallback |
 | Git submission | Pass | Initialized `main` repository with a clean tracked-secret scan |
 | Tests | Pass | `uv run python -m unittest discover -s tests -v` |
 | README trade-offs and next steps | Pass | `README.md` |

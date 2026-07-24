@@ -5,7 +5,8 @@ description = "Format-agnostic engineering document delta and grounded chat"
 requires-python = ">=3.11"
 dependencies = [
   "pymupdf==1.28.0",
-  "rapidfuzz>=3.14,<4"
+  "rapidfuzz>=3.14,<4",
+  "vercel>=0.5,<1",
 ]
 
 [project.optional-dependencies]
