@@ -82,46 +82,13 @@
 
     <section id="analysis-screen" class="screen analysis-screen">
       <div class="analysis-card glass">
-        <div class="analysis-brand-row">
-          <div><span class="analysis-logo">&#916;</span><span><strong>DeltaScope</strong><small>Engineering document intelligence</small></span></div>
-          <span class="analysis-secure"><i></i> Processing comparison</span>
-        </div>
-
-        <div class="analysis-flow">
-          <div class="analysis-file-card">
-            <span class="analysis-file-role">A</span>
-            <div><strong id="analysis-file-a">Original document</strong><small id="analysis-format-a">Detecting format</small></div>
-          </div>
-          <div class="analysis-engine">
-            <span class="engine-ring ring-one"></span>
-            <span class="engine-ring ring-two"></span>
-            <b>&#916;</b>
-          </div>
-          <div class="analysis-file-card revised">
-            <span class="analysis-file-role">B</span>
-            <div><strong id="analysis-file-b">Revised document</strong><small id="analysis-format-b">Detecting format</small></div>
-          </div>
-        </div>
-
+        <div class="analysis-spinner" aria-hidden="true"><i></i></div>
         <div class="analysis-status">
-          <p class="overline"><i></i> Building comparison</p>
           <h2 id="analysis-heading">Reading both documents</h2>
-          <p id="analysis-copy">Detecting formats and creating a shared document model.</p>
         </div>
-
-        <div class="progress-meta"><span id="analysis-stage-label">Stage 1 of 4</span><b id="analysis-percent">12%</b></div>
-        <div class="progress-track"><i id="progress-bar"></i><span></span></div>
-        <div class="analysis-steps">
-          <div class="active"><i></i><span>Ingest</span></div>
-          <div><i></i><span>Align</span></div>
-          <div><i></i><span>Delta</span></div>
-          <div><i></i><span>Index</span></div>
-        </div>
-
-        <div class="analysis-evidence">
-          <span><i class="evidence-location"></i> Located source blocks</span>
-          <span><i class="evidence-delta"></i> Typed delta + confidence</span>
-          <span><i class="evidence-citation"></i> Grounded citation index</span>
+        <div class="analysis-progress" role="progressbar" aria-label="Comparison progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="12">
+          <div class="progress-track"><i id="progress-bar"></i><span></span></div>
+          <b id="analysis-percent">12%</b>
         </div>
       </div>
     </section>
