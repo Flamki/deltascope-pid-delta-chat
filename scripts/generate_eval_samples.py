@@ -22,6 +22,17 @@ def native(name: str, lines: list[str]):
     save_deterministic(document, TARGET / name)
 
 
+def native_positioned(name: str, entries: list[tuple[float, float, str]]):
+    """Generate a page whose text order and geometry can change independently."""
+
+    document = fitz.open()
+    page = document.new_page(width=612, height=792)
+    page.insert_text((54, 52), "DELTASCOPE LAYOUT REGRESSION", fontsize=16)
+    for x, y, line in entries:
+        page.insert_text((x, y), line, fontsize=14)
+    save_deterministic(document, TARGET / name)
+
+
 def scanned(name: str, lines: list[str]):
     source = fitz.open()
     page = source.new_page(width=612, height=792)
@@ -60,6 +71,22 @@ native(
 native(
     "native-note-b.pdf",
     ["NOTE 4 VENT ROUTED TO SAFE LOCATION", "NOTE 5 DRAIN TO CLOSED DRAIN"],
+)
+native_positioned(
+    "native-layout-a.pdf",
+    [
+        (54, 130, "PUMP P-301"),
+        (54, 180, "DESIGN PRESSURE 40 BARG"),
+        (54, 230, "NOTE 8 ROUTE TO FLARE"),
+    ],
+)
+native_positioned(
+    "native-layout-b.pdf",
+    [
+        (330, 560, "NOTE 8 ROUTE TO FLARE"),
+        (330, 610, "PUMP P-301"),
+        (330, 660, "DESIGN PRESSURE 45 BARG"),
+    ],
 )
 
 print(f"Generated evaluation samples in {TARGET}")

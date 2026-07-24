@@ -53,6 +53,21 @@
           "evidence_must_contain": ["vent", "safe location"]
         }
       ]
+    },
+    {
+      "id": "moved-layout-revision",
+      "base": "data/eval/native-layout-a.pdf",
+      "revised": "data/eval/native-layout-b.pdf",
+      "expected_changes": [
+        {"must_contain": ["pressure", "40", "45"]}
+      ],
+      "questions": [
+        {
+          "question": "What changed after the equipment and notes moved on the sheet?",
+          "answer_must_contain": ["pressure", "40", "45"],
+          "evidence_must_contain": ["pressure", "40", "45"]
+        }
+      ]
     }
   ]
 }

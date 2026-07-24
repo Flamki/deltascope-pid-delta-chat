@@ -34,6 +34,18 @@ class TraceStore:
             }
         )
 
+    @staticmethod
+    def measured_span(trace: dict, name: str, duration_ms: float, **attributes):
+        """Record a stage duration measured inside a lower pipeline layer."""
+
+        trace["spans"].append(
+            {
+                "name": name,
+                "duration_ms": round(max(0.0, float(duration_ms)), 2),
+                "attributes": attributes,
+            }
+        )
+
     def finish(self, trace: dict, status: str = "ok", error: str | None = None):
         trace["status"] = status
         trace["duration_ms"] = round((time.time() - trace["started_at"]) * 1000, 2)
@@ -55,4 +67,3 @@ class TraceStore:
             except json.JSONDecodeError:
                 continue
         return list(reversed(rows[-limit:]))
-

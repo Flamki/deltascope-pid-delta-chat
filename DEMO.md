@@ -34,10 +34,10 @@ The workspace opens with grounded chat on the left and source review on the righ
 
 Try:
 
-- “Summarize what changed.”
-- “What are the most critical changes?”
-- “What appears only in File B?”
-- “Which pressure values changed?”
+- "Summarize what changed."
+- "What are the most critical changes?"
+- "What appears only in File B?"
+- "Which pressure values changed?"
 
 Each result contains clickable citations to a PID, page, and block.
 
@@ -46,7 +46,7 @@ Each result contains clickable citations to a PID, page, and block.
 Open the chart icon in the top-right. The observability panel shows:
 
 - compare and chat traces;
-- per-stage pipeline names and latency;
+- measured per-stage pipeline latency;
 - token estimates and cost;
 - request status and failure visibility.
 
@@ -57,13 +57,16 @@ make eval
 ```
 
 The command prints the regression scorecard and writes
-`artifacts/eval-scorecard.json`. The verified baseline is:
+`artifacts/eval-scorecard.json`. It reports:
 
-- delta precision / recall / F1: `1.0 / 1.0 / 1.0`;
-- chat answer correctness: `1.0`;
-- groundedness and evidence-backed citation accuracy: `1.0 / 1.0`;
-- BM25 retrieval recall@k / mean reciprocal rank: `1.0 / 0.8333`;
-- three labeled document pairs, including a scanned-PDF/OCR pair.
+- delta precision, recall, and F1;
+- chat answer correctness;
+- groundedness and evidence-backed citation accuracy;
+- BM25 retrieval recall@k and mean reciprocal rank;
+- four labeled document pairs, including scanned-PDF/OCR and moved-layout cases.
+
+`make eval` exits non-zero when any protected metric falls below its declared
+threshold, so it can detect a regression in CI instead of only printing scores.
 
 ## 7. Prove the DWG path
 

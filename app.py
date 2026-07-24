@@ -452,33 +452,43 @@ class Handler(BaseHTTPRequestHandler):
         trace = TRACE_STORE.start("chat", session_id)
         attach_comparison_lineage(trace, session_id)
         try:
-            started = time.perf_counter()
             result = answer_question(
                 question,
                 [session.base, session.revised],
                 session.report,
                 session_id=session_id,
             )
-            TRACE_STORE.span(
+            timings = result.get("stage_timings_ms", {})
+            TRACE_STORE.measured_span(
                 trace,
                 "retrieval",
-                started,
+                timings.get("retrieval", 0),
                 hits=result["retrieval_hits"],
                 sources=list({c["source"] for c in result["citations"]}),
                 method=result.get("retrieval", {}).get("method"),
                 top_scores=result.get("retrieval", {}).get("top_scores", [])[:5],
             )
-            started = time.perf_counter()
-            TRACE_STORE.span(
+            TRACE_STORE.measured_span(
+                trace,
+                "answer_draft",
+                timings.get("answer_draft", 0),
+                evidence_items=result["retrieval_hits"],
+            )
+            TRACE_STORE.measured_span(
                 trace,
                 "llm",
-                started,
+                timings.get("llm", 0),
                 provider=result["provider"],
                 fallback=bool(result.get("provider_error")),
                 provider_error=result.get("provider_error"),
             )
-            started = time.perf_counter()
-            TRACE_STORE.span(trace, "answer", started, citations=len(result["citations"]), grounded=result["grounded"])
+            TRACE_STORE.measured_span(
+                trace,
+                "answer",
+                timings.get("answer", 0),
+                citations=len(result["citations"]),
+                grounded=result["grounded"],
+            )
             trace["telemetry"] = {
                 "model": result["provider"],
                 "prompt": result["prompt"],

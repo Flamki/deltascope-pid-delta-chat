@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import fitz
 
+from eval.run_eval import regression_failures
 from src.canonical import CanonicalDocument
 from src.chat import answer_question
 from src.chat.answer import bm25_rank
@@ -85,6 +86,37 @@ class PipelineTests(unittest.TestCase):
         self.assertGreater(result["retrieval_hits"], 0)
         self.assertTrue(result["citations"])
         self.assertTrue(all(citation["source"] in {"PID-A", "PID-B", "DELTA"} for citation in result["citations"]))
+        self.assertEqual(set(result["stage_timings_ms"]), {"retrieval", "answer_draft", "llm", "answer"})
+        self.assertTrue(all(value >= 0 for value in result["stage_timings_ms"].values()))
+
+    def test_moved_unchanged_blocks_are_not_reported_as_changes(self):
+        before = self.root / "moved-before.pdf"
+        after = self.root / "moved-after.pdf"
+        create_pdf(before, ["PUMP P-301", "DESIGN PRESSURE 40 BARG", "NOTE 8 ROUTE TO FLARE"])
+        create_pdf(after, ["NOTE 8 ROUTE TO FLARE", "PUMP P-301", "DESIGN PRESSURE 45 BARG"])
+        router = AdapterRouter()
+        report = compare_documents(router.ingest("PID-A", before), router.ingest("PID-B", after))
+        self.assertEqual(report["counts"], {"added": 0, "removed": 0, "modified": 1})
+        self.assertIn("40 BARG", report["findings"][0]["description"])
+        self.assertIn("45 BARG", report["findings"][0]["description"])
+
+    def test_eval_gate_detects_a_regression(self):
+        degraded = {
+            "delta": {"f1": 0.75},
+            "chat": {"answer_correctness": 1.0, "citation_accuracy": 1.0, "groundedness": 1.0},
+            "retrieval": {"recall_at_k": 1.0},
+        }
+        failures = regression_failures(
+            degraded,
+            {
+                "delta_f1": 0.9,
+                "chat_correctness": 0.9,
+                "citation_accuracy": 0.9,
+                "groundedness": 0.9,
+                "retrieval_recall_at_k": 0.9,
+            },
+        )
+        self.assertEqual(failures, [{"metric": "delta_f1", "actual": 0.75, "minimum": 0.9}])
 
     def test_specific_what_changed_question_uses_relevant_evidence(self):
         router = AdapterRouter()

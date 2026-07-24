@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from src.chat import answer_question
@@ -9,6 +10,31 @@ from src.ingest.router import AdapterRouter
 
 ROOT = Path(__file__).resolve().parents[1]
 DATASET = ROOT / "eval" / "datasets" / "ground_truth.json"
+
+
+def regression_thresholds() -> dict[str, float]:
+    return {
+        "delta_f1": float(os.getenv("EVAL_MIN_DELTA_F1", "0.90")),
+        "chat_correctness": float(os.getenv("EVAL_MIN_CHAT_CORRECTNESS", "0.90")),
+        "citation_accuracy": float(os.getenv("EVAL_MIN_CITATION_ACCURACY", "0.90")),
+        "groundedness": float(os.getenv("EVAL_MIN_GROUNDEDNESS", "0.90")),
+        "retrieval_recall_at_k": float(os.getenv("EVAL_MIN_RETRIEVAL_RECALL_AT_K", "0.90")),
+    }
+
+
+def regression_failures(scorecard: dict, thresholds: dict[str, float]) -> list[dict]:
+    actual = {
+        "delta_f1": scorecard["delta"]["f1"],
+        "chat_correctness": scorecard["chat"]["answer_correctness"],
+        "citation_accuracy": scorecard["chat"]["citation_accuracy"],
+        "groundedness": scorecard["chat"]["groundedness"],
+        "retrieval_recall_at_k": scorecard["retrieval"]["recall_at_k"],
+    }
+    return [
+        {"metric": metric, "actual": actual[metric], "minimum": minimum}
+        for metric, minimum in thresholds.items()
+        if actual[metric] < minimum
+    ]
 
 
 def finding_text(finding: dict) -> str:
@@ -121,6 +147,13 @@ def run():
             "OCR bounding boxes are approximate and low-quality scans may split labels.",
         ],
     }
+    thresholds = regression_thresholds()
+    failures = regression_failures(scorecard, thresholds)
+    scorecard["regression_gate"] = {
+        "passed": not failures,
+        "thresholds": thresholds,
+        "failures": failures,
+    }
     output = ROOT / "artifacts" / "eval-scorecard.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(scorecard, indent=2), encoding="utf-8")
@@ -129,4 +162,6 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    result = run()
+    if not result["regression_gate"]["passed"]:
+        raise SystemExit(1)

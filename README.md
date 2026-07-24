@@ -187,6 +187,11 @@ records the prompt, response, provider name, input/output token estimates,
 citations, latency, and cost. Errors are retained with the same request and
 session identifiers.
 
+Retrieval, fallback-draft construction, provider invocation, and final answer
+validation are timed where they actually execute inside the chat layer. The
+request handler records those measured durations; it does not infer stage
+timings from the duration of the outer call.
+
 Completed canonical documents, reports, and source paths are persisted under the
 ignored artifacts directory. The server restores the 20 most recent sessions on
 startup without repeating OCR or LLM calls.
@@ -206,11 +211,13 @@ Or:
 make eval
 ```
 
-The labeled dataset includes three independent pairs:
+The labeled dataset includes four independent pairs:
 
 - native PDF equipment revision;
 - scanned PDF set-point revision;
 - native PDF note revision.
+- a layout-move regression where unchanged content is relocated and reordered,
+  while one moved pressure block is modified.
 
 The fixture generator uses built-in PDF fonts and deterministic document output,
 so repeated `make eval` runs do not dirty the repository.
@@ -221,6 +228,12 @@ reciprocal rank, per-pair formats, and known failures. Citation accuracy require
 the cited excerpt to contain the labeled supporting evidence; checking only for
 the presence of a citation ID is intentionally insufficient. The latest result
 is written to `artifacts/eval-scorecard.json`.
+
+The command is also a regression gate: it exits non-zero if delta F1, answer
+correctness, evidence-backed citation accuracy, groundedness, or retrieval
+recall@k falls below `0.90`. Thresholds are environment-configurable, and the
+effective thresholds plus any failures are included in the scorecard. A unit
+test deliberately feeds the gate a degraded F1 score to prove that it fails.
 
 Run the independent real-DWG regression:
 
@@ -290,6 +303,10 @@ uv run python -m unittest discover -s tests -v
 
 ## Honest limitations
 
+- The labeled PDF set is deliberately small and deterministic. It proves that
+  known change, movement, OCR, citation, and refusal regressions are detectable;
+  it does not establish generalization across unseen owner/operator drawing
+  standards without a larger independently labeled corpus.
 - Common 2D DWG entity and symbol-bound changes are detected, but semantic
   connectivity/topology and proprietary proxy objects are not reconstructed.
 - OCR is slower and its bounding boxes are approximate.
@@ -311,3 +328,10 @@ uv run python -m unittest discover -s tests -v
 3. Expand the renderer for 3D solids, hatches, and proprietary proxy objects.
 4. Move persisted sessions to object storage plus Postgres for horizontal scale.
 5. Add a calibrated hybrid dense/sparse retriever after expanding the labeled retrieval set.
+
+For a 500-sheet set, the next architecture would store source pages and
+canonical blocks in object storage/Postgres, fingerprint pages before OCR,
+process only changed sheets through a durable queue, shard candidate indexes by
+drawing number/revision, cache OCR and embeddings by content hash, and stream
+partial reports. Evaluation would add sheet-level sampling plus owner/operator
+holdouts so throughput improvements could not hide quality regressions.

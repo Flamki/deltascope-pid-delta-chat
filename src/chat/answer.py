@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import os
 import re
+import time
 from collections import Counter
 
 from src.canonical import CanonicalDocument
@@ -115,6 +116,7 @@ def answer_question(
     report: dict,
     session_id: str | None = None,
 ) -> dict:
+    retrieval_started = time.perf_counter()
     corpus: list[dict] = []
     for document in documents:
         for block in document.blocks:
@@ -158,9 +160,12 @@ def answer_question(
         selected = [item for _, item in scored[:top_k]]
         lead = "The strongest supporting evidence is below."
 
+    retrieval_ms = round((time.perf_counter() - retrieval_started) * 1000, 2)
     if not selected:
+        answer_started = time.perf_counter()
+        answer = "I cannot answer that from the uploaded documents or delta report. Try a more specific question or inspect the source drawings."
         return {
-            "answer": "I cannot answer that from the uploaded documents or delta report. Try a more specific question or inspect the source drawings.",
+            "answer": answer,
             "citations": [],
             "retrieval_hits": 0,
             "grounded": True,
@@ -170,8 +175,15 @@ def answer_question(
             "output_tokens": 25,
             "estimated_cost_usd": 0,
             "retrieval": retrieval,
+            "stage_timings_ms": {
+                "retrieval": retrieval_ms,
+                "answer_draft": round((time.perf_counter() - answer_started) * 1000, 2),
+                "llm": 0.0,
+                "answer": 0.0,
+            },
         }
 
+    draft_started = time.perf_counter()
     statements = [lead]
     citations = []
     for index, item in enumerate(selected, 1):
@@ -190,16 +202,23 @@ def answer_question(
             }
         )
     response = "\n".join(statements)
+    draft_ms = round((time.perf_counter() - draft_started) * 1000, 2)
+
     provider_error = None
+    llm_started = time.perf_counter()
     try:
         generated = generate_with_configured_llm(question, selected, response, session_id=session_id)
     except ProviderError as exc:
         generated = None
         provider_error = str(exc)
+    llm_ms = round((time.perf_counter() - llm_started) * 1000, 2)
+
+    answer_started = time.perf_counter()
     if generated:
         response = generated["answer"]
         selected_citation_ids = set(generated["cited_ids"])
         citations = [citation for citation in citations if citation["id"] in selected_citation_ids]
+    answer_ms = round((time.perf_counter() - answer_started) * 1000, 2)
     return {
         "answer": response,
         "citations": citations,
@@ -219,5 +238,11 @@ def answer_question(
                 item["id"]: retrieval["score_by_id"].get(item["id"], 0)
                 for item in selected
             },
+        },
+        "stage_timings_ms": {
+            "retrieval": retrieval_ms,
+            "answer_draft": draft_ms,
+            "llm": llm_ms,
+            "answer": answer_ms,
         },
     }
