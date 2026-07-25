@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import math
 import mimetypes
 import os
 import re
@@ -631,16 +632,44 @@ class Handler(BaseHTTPRequestHandler):
             query = parse_qs(parsed.query)
             try:
                 page_number = int((query.get("page") or ["1"])[0])
-                scale = min(1.5, max(0.75, float((query.get("scale") or ["1"])[0])))
+                requested_scale = float((query.get("scale") or ["1"])[0])
             except ValueError:
                 return self.send_api_error("Invalid page or scale.", 422)
+            crop_keys = ("x0", "y0", "x1", "y1")
+            crop_values = None
+            if any(key in query for key in crop_keys):
+                if not all(key in query for key in crop_keys):
+                    return self.send_api_error("A crop requires x0, y0, x1, and y1.", 422)
+                try:
+                    crop_values = tuple(float(query[key][0]) for key in crop_keys)
+                except (ValueError, TypeError):
+                    return self.send_api_error("Invalid crop coordinates.", 422)
+                if (
+                    not all(math.isfinite(value) and 0 <= value <= 1 for value in crop_values)
+                    or crop_values[2] <= crop_values[0]
+                    or crop_values[3] <= crop_values[1]
+                ):
+                    return self.send_api_error("Crop coordinates must be an ordered normalized region.", 422)
+            scale = min(4.0 if crop_values else 1.5, max(0.75, requested_scale))
             block_id = (query.get("block_id") or [""])[0]
             block = next((item for item in document.blocks if item.id == block_id), None) if block_id else None
             pdf_content = create_highlight_pdf(source, block) if block else source.read_bytes()
             with fitz.open(stream=pdf_content, filetype="pdf") as pdf:
                 if page_number < 1 or page_number > len(pdf):
                     return self.send_api_error("Page not found.", 404)
-                pixmap = pdf[page_number - 1].get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
+                page = pdf[page_number - 1]
+                clip = None
+                if crop_values:
+                    x0, y0, x1, y1 = crop_values
+                    clip = fitz.Rect(
+                        page.rect.x0 + x0 * page.rect.width,
+                        page.rect.y0 + y0 * page.rect.height,
+                        page.rect.x0 + x1 * page.rect.width,
+                        page.rect.y0 + y1 * page.rect.height,
+                    )
+                    maximum_pixels = 4_000_000
+                    scale = min(scale, math.sqrt(maximum_pixels / max(1.0, clip.width * clip.height)))
+                pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale), clip=clip, alpha=False)
                 content = pixmap.tobytes("png")
             return self.send_bytes(content, "image/png")
         match = re.fullmatch(r"/api/sessions/([^/]+)/documents/(PID-A|PID-B)/view\.svg", path)

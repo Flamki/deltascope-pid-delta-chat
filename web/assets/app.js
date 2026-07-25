@@ -192,6 +192,22 @@ function drawingUrl(pid, page, highlightBlockId = "") {
   return `/api/sessions/${state.session.id}/documents/${pid}/render.png?${query}`;
 }
 
+function selectionPreviewUrl(selection) {
+  const document = state.session.documents[selection.source];
+  if (document.format === "dwg") {
+    return drawingUrl(selection.source, selection.page);
+  }
+  const query = new URLSearchParams({
+    page: String(selection.page),
+    scale: "3",
+    x0: String(selection.region.x0),
+    y0: String(selection.region.y0),
+    x1: String(selection.region.x1),
+    y1: String(selection.region.y1)
+  });
+  return `/api/sessions/${state.session.id}/documents/${selection.source}/render.png?${query}`;
+}
+
 function clearCanvasSelection() {
   state.selection = null;
   $("#selection-box").classList.add("hidden");
@@ -338,14 +354,27 @@ selectionLayer.addEventListener("pointerup", event => {
 function clearPendingSelection() {
   state.pendingSelection = null;
   $("#selection-context").classList.add("hidden");
+  $("#selection-context").classList.remove("preview-failed");
+  $("#selection-context-preview").removeAttribute("src");
 }
+
+$("#selection-context-preview").addEventListener("load", () => {
+  $("#selection-context").classList.remove("preview-failed");
+  $("#selection-context-status").textContent = "Visual reference attached";
+});
+$("#selection-context-preview").addEventListener("error", () => {
+  $("#selection-context").classList.add("preview-failed");
+  $("#selection-context-status").textContent = "Coordinates attached · preview unavailable";
+});
 
 $("#ask-selection").addEventListener("click", event => {
   event.stopPropagation();
   if (!state.selection) return;
   state.pendingSelection = structuredClone(state.selection);
+  state.pendingSelection.previewUrl = selectionPreviewUrl(state.pendingSelection);
   const sourceLabel = state.pendingSelection.source === "PID-A" ? "File A" : "File B";
   $("#selection-context-label").textContent = `${sourceLabel} · Page ${state.pendingSelection.page} · selected area`;
+  $("#selection-context-preview").src = state.pendingSelection.previewUrl;
   $("#selection-context").classList.remove("hidden");
   if (!questionField.value.trim()) {
     questionField.value = "What is shown in this selected area, and does it change between the documents?";
@@ -381,13 +410,27 @@ document.addEventListener("click", event => {
   if (!event.target.closest(".export-menu")) $(".export-popover").classList.remove("open");
 });
 
-function addMessage(role, content, citations = []) {
+function addMessage(role, content, citations = [], attachment = null) {
   const thread = $("#chat-thread");
   const shouldFollow = role === "user" || thread.scrollHeight - thread.scrollTop - thread.clientHeight < 100;
   const element = document.createElement("div");
   element.className = `message ${role}`;
   if (role === "user") {
-    element.innerHTML = `<div class="bubble"><p>${escapeHtml(content)}</p></div>`;
+    const sourceLabel = attachment?.source === "PID-A" ? "File A" : "File B";
+    const attachmentMarkup = attachment
+      ? `<figure class="message-attachment">
+          <img src="${escapeHtml(attachment.previewUrl)}" alt="Selected area from ${sourceLabel}, page ${attachment.page}">
+          <figcaption><span>Selected drawing area</span><b>${sourceLabel} · Page ${attachment.page}</b></figcaption>
+        </figure>`
+      : "";
+    element.innerHTML = `<div class="bubble${attachment ? " with-attachment" : ""}">${attachmentMarkup}<p>${escapeHtml(content)}</p></div>`;
+    const preview = $(".message-attachment img", element);
+    if (preview) {
+      preview.addEventListener("error", () => {
+        preview.remove();
+        $(".message-attachment span", element).textContent = "Visual preview unavailable";
+      });
+    }
   } else {
     element.innerHTML = `<div class="avatar">✦</div><div class="bubble"><p>${escapeHtml(content)}</p>
       <div class="citation-list">${citations.map(citation => `<button class="citation-chip" data-source="${escapeHtml(citation.source)}" data-target-source="${escapeHtml(citation.target_source || "")}" data-block="${escapeHtml(citation.target_block_id || "")}" data-page="${citation.page || 1}">${escapeHtml(citation.id)} · ${escapeHtml(citation.target_source || citation.source)} · p.${citation.page || "—"}</button>`).join("")}</div></div>`;
@@ -434,8 +477,11 @@ $("#chat-form").addEventListener("submit", async event => {
   event.preventDefault();
   const field = $("#question"), question = field.value.trim();
   if (!question || !state.session) return;
-  const selection = state.pendingSelection ? structuredClone(state.pendingSelection) : null;
-  addMessage("user", question); field.value = ""; resizeQuestionField();
+  const attachment = state.pendingSelection ? structuredClone(state.pendingSelection) : null;
+  const selection = attachment
+    ? { source: attachment.source, page: attachment.page, region: attachment.region }
+    : null;
+  addMessage("user", question, [], attachment); field.value = ""; resizeQuestionField();
   clearPendingSelection();
   const pending = addMessage("assistant", "Searching both documents and the delta report...");
   try {

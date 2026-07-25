@@ -190,7 +190,11 @@
                   <svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg>
                 </button>
                 <div class="selection-context hidden" id="selection-context">
-                  <span><i></i><b id="selection-context-label">File A · Page 1 selection</b></span>
+                  <img id="selection-context-preview" alt="Selected drawing area preview">
+                  <span class="selection-context-copy">
+                    <b id="selection-context-label">File A · Page 1 selection</b>
+                    <small id="selection-context-status">Visual reference attached</small>
+                  </span>
                   <button id="clear-selection-context" type="button" aria-label="Remove selected region">×</button>
                 </div>
                 <textarea id="question" rows="1" wrap="soft" placeholder="Ask about either document or the delta..." aria-label="Ask a question"></textarea>
