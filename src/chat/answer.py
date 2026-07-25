@@ -9,6 +9,8 @@ from collections import Counter
 from src.canonical import CanonicalDocument
 from .providers import ProviderError, generate_with_configured_llm
 
+LOCAL_ANSWER_PROVIDER = "local-grounded-synthesis-v3"
+
 ENGINEERING_SHORT_TERMS = {
     "dp",
     "fi",
@@ -58,7 +60,190 @@ def delta_item(finding: dict) -> dict:
         "target_source": reference.get("source"),
         "target_block_id": reference.get("block_id"),
         "text": finding["description"],
+        "change_type": finding.get("change_type"),
+        "severity": finding.get("severity"),
+        "item_type": finding.get("item_type"),
+        "before_block_id": (finding.get("before") or {}).get("block_id"),
+        "after_block_id": (finding.get("after") or {}).get("block_id"),
+        "before_text": (finding.get("before") or {}).get("text"),
+        "after_text": (finding.get("after") or {}).get("text"),
     }
+
+
+def is_contextual_follow_up(question: str, history: list[dict] | None) -> bool:
+    if not history:
+        return False
+    lowered = question.lower().strip()
+    follow_up_phrases = (
+        "what about",
+        "how about",
+        "and the",
+        "what is the revised",
+        "what is the old",
+        "where exactly",
+        "why did",
+        "does that",
+        "is that",
+        "show me that",
+    )
+    pronouns = {"it", "that", "this", "those", "these", "there", "they", "them"}
+    return lowered.startswith(follow_up_phrases) or bool(set(terms(lowered)) & pronouns) or len(terms(lowered)) <= 3
+
+
+def contextualize_question(question: str, history: list[dict] | None) -> str:
+    if not is_contextual_follow_up(question, history):
+        return question
+    prior_user_messages = [
+        str(item.get("content", "")).strip()
+        for item in history or []
+        if item.get("role") == "user" and str(item.get("content", "")).strip()
+    ]
+    if not prior_user_messages:
+        return question
+    return f"{prior_user_messages[-1]} {question}"
+
+
+def naturalize_delta(item: dict) -> str:
+    description = re.sub(r"\s+", " ", item["text"]).strip()
+    added = re.fullmatch(r"(.+?) added: '(.+)'\.", description)
+    if added:
+        return f"File B adds {added.group(2)}."
+    removed = re.fullmatch(r"(.+?) removed: '(.+)'\.", description)
+    if removed:
+        return f"File B removes {removed.group(2)}."
+    changed = re.fullmatch(r"(.+?) changed from '(.+)' to '(.+)'\.", description)
+    if changed:
+        subject = changed.group(1).strip().capitalize()
+        return f"{subject} changed from {changed.group(2)} to {changed.group(3)}."
+    return description
+
+
+def source_label(source: str) -> str:
+    return {"PID-A": "File A", "PID-B": "File B", "DELTA": "the delta report"}.get(source, source)
+
+
+def evidence_text(item: dict, limit: int = 360) -> str:
+    return re.sub(r"\s+", " ", item["text"]).strip()[:limit]
+
+
+def render_grounded_answer(
+    question: str,
+    evidence: list[dict],
+    report: dict,
+    mode: str,
+    selection: dict | None,
+) -> str:
+    delta_evidence = [item for item in evidence if item["kind"] == "delta"]
+    document_evidence = [item for item in evidence if item["kind"] == "document"]
+    lines: list[str] = []
+
+    if selection:
+        label = source_label(str(selection.get("source")))
+        page = selection.get("page", 1)
+        lines.append(f"Here’s what I can confirm in the selected area on {label}, page {page}:")
+        selected_source = [
+            item for item in document_evidence if item["source"] == selection.get("source")
+        ]
+        for item in selected_source:
+            lines.append(f"• {evidence_text(item)} [{item['id']}]")
+        for item in delta_evidence:
+            lines.append(f"• Revision check: {naturalize_delta(item)} [{item['id']}]")
+        for item in document_evidence:
+            if item in selected_source:
+                continue
+            lines.append(
+                f"• Related evidence in {source_label(item['source'])}: "
+                f"{evidence_text(item)} [{item['id']}]"
+            )
+        lines.append("If you want, select a tighter area and I’ll isolate a specific tag, note, or instrument.")
+        return "\n".join(lines)
+
+    if mode == "summary":
+        counts = report["counts"]
+        lines.append(
+            f"The comparison contains {sum(counts.values())} changes: "
+            f"{counts['added']} added, {counts['removed']} removed, and "
+            f"{counts['modified']} modified. The highest-priority evidence is:"
+        )
+        for item in evidence:
+            severity = str(item.get("severity") or "review").capitalize()
+            detail = naturalize_delta(item) if item["kind"] == "delta" else evidence_text(item)
+            lines.append(f"• {severity}: {detail} [{item['id']}]")
+        return "\n".join(lines)
+
+    if mode == "added":
+        added_count = report["counts"]["added"]
+        lines.append(
+            f"File B has {added_count} addition{'s' if added_count != 1 else ''}. "
+            "Here are the relevant additions:"
+        )
+        for item in evidence:
+            detail = naturalize_delta(item) if item["kind"] == "delta" else evidence_text(item)
+            lines.append(f"• {detail} [{item['id']}]")
+        return "\n".join(lines)
+
+    if mode == "removed":
+        removed_count = report["counts"]["removed"]
+        lines.append(
+            f"File B has {removed_count} removal{'s' if removed_count != 1 else ''}. "
+            "Here are the relevant removals:"
+        )
+        for item in evidence:
+            detail = naturalize_delta(item) if item["kind"] == "delta" else evidence_text(item)
+            lines.append(f"• {detail} [{item['id']}]")
+        return "\n".join(lines)
+
+    if delta_evidence:
+        first = delta_evidence[0]
+        lowered_question = question.lower()
+        asks_revised = any(
+            phrase in lowered_question
+            for phrase in ("revised", "new value", "current value", "what is it now", "changed to")
+        )
+        asks_original = any(
+            phrase in lowered_question
+            for phrase in ("original", "old value", "previous value", "changed from")
+        )
+        if asks_revised and first.get("after_text"):
+            lines.append(f"The revised document states: {first['after_text']}. [{first['id']}]")
+            for item in document_evidence:
+                if item["source"] == "PID-B":
+                    lines.append(
+                        f"• File B, page {item.get('page')}: {evidence_text(item)} [{item['id']}]"
+                    )
+            return "\n".join(lines)
+        if asks_original and first.get("before_text"):
+            lines.append(f"The original document states: {first['before_text']}. [{first['id']}]")
+            for item in document_evidence:
+                if item["source"] == "PID-A":
+                    lines.append(
+                        f"• File A, page {item.get('page')}: {evidence_text(item)} [{item['id']}]"
+                    )
+            return "\n".join(lines)
+        direct = naturalize_delta(first)
+        yes_no = question.lower().strip().startswith(("is ", "are ", "was ", "were ", "did ", "does "))
+        prefix = "Yes — " if yes_no and first.get("change_type") == "added" else ""
+        lines.append(f"{prefix}{direct} [{first['id']}]")
+        for item in delta_evidence[1:]:
+            lines.append(f"• Also relevant: {naturalize_delta(item)} [{item['id']}]")
+        for item in document_evidence:
+            lines.append(
+                f"• {source_label(item['source'])}, page {item.get('page')}: "
+                f"{evidence_text(item)} [{item['id']}]"
+            )
+        return "\n".join(lines)
+
+    first = document_evidence[0]
+    lines.append(
+        f"{source_label(first['source'])}, page {first.get('page')}, states: "
+        f"{evidence_text(first)} [{first['id']}]"
+    )
+    for item in document_evidence[1:]:
+        lines.append(
+            f"• {source_label(item['source'])}, page {item.get('page')}: "
+            f"{evidence_text(item)} [{item['id']}]"
+        )
+    return "\n".join(lines)
 
 
 def bm25_rank(query_text: str, corpus: list[dict]) -> tuple[list[tuple[float, dict]], dict]:
@@ -110,6 +295,14 @@ def bm25_rank(query_text: str, corpus: list[dict]) -> tuple[list[tuple[float, di
     }
 
 
+def keep_relevant_scores(scored: list[tuple[float, dict]]) -> tuple[list[tuple[float, dict]], float]:
+    if not scored:
+        return [], 0.0
+    relative_floor = min(1.0, max(0.0, float(os.getenv("RETRIEVAL_RELATIVE_SCORE_FLOOR", "0.32"))))
+    cutoff = scored[0][0] * relative_floor
+    return [item for item in scored if item[0] >= cutoff], round(cutoff, 6)
+
+
 def selected_region_items(documents: list[CanonicalDocument], selection: dict | None) -> list[dict]:
     if not selection:
         return []
@@ -158,6 +351,7 @@ def answer_question(
     report: dict,
     session_id: str | None = None,
     selection: dict | None = None,
+    history: list[dict] | None = None,
 ) -> dict:
     retrieval_started = time.perf_counter()
     corpus: list[dict] = []
@@ -178,34 +372,18 @@ def answer_question(
 
     top_k = max(1, int(os.getenv("RETRIEVAL_TOP_K", "6")))
     region_items = selected_region_items(documents, selection)
-    retrieval_query = question
+    retrieval_query = contextualize_question(question, history)
     if selection and region_items:
-        retrieval_query = f"{question} {' '.join(item['text'] for item in region_items[:4])}"
+        retrieval_query = f"{retrieval_query} {' '.join(item['text'] for item in region_items[:4])}"
     scored, retrieval = bm25_rank(retrieval_query, corpus)
+    relevant_scored, score_cutoff = keep_relevant_scores(scored)
+    retrieval["query"] = retrieval_query
+    retrieval["contextualized"] = retrieval_query != question
+    retrieval["relative_score_cutoff"] = score_cutoff
 
     lower = question.lower()
-    if selection:
-        if not region_items:
-            selected = []
-            lead = "No indexed text or engineering label intersects the selected area."
-        else:
-            selected = region_items[: min(3, top_k)]
-            selected_ids = {item["id"] for item in selected}
-            selected.extend(item for _, item in scored if item["id"] not in selected_ids)
-            selected = selected[:top_k]
-            source_label = "File A" if selection.get("source") == "PID-A" else "File B"
-            lead = (
-                f"I grounded this answer in the selected area on {source_label}, "
-                f"page {selection.get('page', 1)}, plus matching evidence from both documents and the delta."
-            )
-            retrieval["method"] = "region+okapi-bm25"
-            retrieval["selection_hits"] = len(region_items)
-            retrieval["selection"] = selection
-    elif "only in file b" in lower or "only in pid-b" in lower or "added" in lower:
-        added = [finding for finding in report["findings"] if finding["change_type"] == "added"]
-        selected = [delta_item(finding) for finding in added[:top_k]]
-        lead = f"I found {len(added)} additions in File B."
-    elif lower.strip(" ?.") in {
+    normalized_question = lower.strip(" ?.")
+    summary_questions = {
         "what changed",
         "summarize what changed",
         "summarize changes",
@@ -213,29 +391,88 @@ def answer_question(
         "what are the biggest changes",
         "differences",
         "delta",
-    }:
+        "give me a summary",
+        "give me an overview",
+    }
+    added_questions = {
+        "what was added",
+        "what is added",
+        "show additions",
+        "list additions",
+        "added items",
+    }
+    removed_questions = {
+        "what was removed",
+        "what is removed",
+        "show removals",
+        "list removals",
+        "removed items",
+    }
+    mode = "specific"
+    if selection:
+        if not region_items:
+            selected = []
+        else:
+            selected = region_items[: min(3, top_k)]
+            region_ids = {item["id"] for item in region_items}
+            related_delta = [
+                delta_item(finding)
+                for finding in report["findings"]
+                if {
+                    (finding.get("before") or {}).get("block_id"),
+                    (finding.get("after") or {}).get("block_id"),
+                }
+                & region_ids
+            ]
+            selected_ids = {item["id"] for item in selected}
+            selected.extend(item for item in related_delta if item["id"] not in selected_ids)
+            selected_ids.update(item["id"] for item in selected)
+            selected.extend(item for _, item in relevant_scored if item["id"] not in selected_ids)
+            selected = selected[:top_k]
+            retrieval["method"] = "region+okapi-bm25"
+            retrieval["selection_hits"] = len(region_items)
+            retrieval["selection"] = selection
+    elif (
+        "only in file b" in lower
+        or "only in pid-b" in lower
+        or normalized_question in added_questions
+    ):
+        added = [finding for finding in report["findings"] if finding["change_type"] == "added"]
+        selected = [delta_item(finding) for finding in added[:top_k]]
+        mode = "added"
+    elif (
+        "only in file a" in lower
+        or "only in pid-a" in lower
+        or normalized_question in removed_questions
+    ):
+        removed = [finding for finding in report["findings"] if finding["change_type"] == "removed"]
+        selected = [delta_item(finding) for finding in removed[:top_k]]
+        mode = "removed"
+    elif (
+        normalized_question in summary_questions
+        or ("critical" in lower and ("change" in lower or "difference" in lower))
+    ):
         selected = [delta_item(finding) for finding in report["findings"][:top_k]]
-        lead = (
-            f"I found {sum(report['counts'].values())} changes: "
-            f"{report['counts']['added']} added, {report['counts']['removed']} removed, "
-            f"and {report['counts']['modified']} modified."
-        )
+        mode = "summary"
     else:
-        selected = [item for _, item in scored[:top_k]]
-        lead = "The strongest supporting evidence is below."
+        selected = [item for _, item in relevant_scored[:top_k]]
 
     retrieval_ms = round((time.perf_counter() - retrieval_started) * 1000, 2)
     if not selected:
         answer_started = time.perf_counter()
-        answer = "I cannot answer that from the uploaded documents or delta report. Try a more specific question or inspect the source drawings."
+        answer = (
+            "I don’t have enough evidence in these files to answer that confidently. "
+            "Try asking about a specific tag, note, pressure, alarm/trip setpoint, page, "
+            "or listed change—or select the relevant drawing area."
+        )
         return {
             "answer": answer,
             "citations": [],
             "retrieval_hits": 0,
             "grounded": True,
-            "provider": "local-extractive-v2",
-            "prompt": question,
-            "input_tokens": len(terms(question)),
+            "provider": LOCAL_ANSWER_PROVIDER,
+            "prompt": retrieval_query,
+            "input_tokens": len(terms(retrieval_query)),
             "output_tokens": 25,
             "estimated_cost_usd": 0,
             "retrieval": retrieval,
@@ -248,11 +485,10 @@ def answer_question(
         }
 
     draft_started = time.perf_counter()
-    statements = [lead]
+    response = render_grounded_answer(question, selected, report, mode, selection)
     citations = []
-    for index, item in enumerate(selected, 1):
-        excerpt = re.sub(r"\s+", " ", item["text"]).strip()[:320]
-        statements.append(f"{index}. {excerpt} [{item['id']}]")
+    for item in selected:
+        excerpt = evidence_text(item, 320)
         citations.append(
             {
                 "id": item["id"],
@@ -265,13 +501,18 @@ def answer_question(
                 "target_block_id": item.get("target_block_id") or (item["id"] if item["source"].startswith("PID-") else None),
             }
         )
-    response = "\n".join(statements)
     draft_ms = round((time.perf_counter() - draft_started) * 1000, 2)
 
     provider_error = None
     llm_started = time.perf_counter()
     try:
-        generated = generate_with_configured_llm(question, selected, response, session_id=session_id)
+        generated = generate_with_configured_llm(
+            question,
+            selected,
+            response,
+            session_id=session_id,
+            history=history,
+        )
     except ProviderError as exc:
         generated = None
         provider_error = str(exc)
@@ -288,9 +529,9 @@ def answer_question(
         "citations": citations,
         "retrieval_hits": len(selected),
         "grounded": True,
-        "provider": generated["provider"] if generated else "local-extractive-v2",
-        "prompt": generated["prompt"] if generated else question,
-        "input_tokens": generated["input_tokens"] if generated else len(terms(question)) + sum(len(terms(item["text"])) for item in selected),
+        "provider": generated["provider"] if generated else LOCAL_ANSWER_PROVIDER,
+        "prompt": generated["prompt"] if generated else retrieval_query,
+        "input_tokens": generated["input_tokens"] if generated else len(terms(retrieval_query)) + sum(len(terms(item["text"])) for item in selected),
         "output_tokens": generated["output_tokens"] if generated else len(terms(response)),
         "estimated_cost_usd": generated["estimated_cost_usd"] if generated else 0,
         "response_id": generated.get("response_id") if generated else None,

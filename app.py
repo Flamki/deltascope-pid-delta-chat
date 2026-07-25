@@ -511,12 +511,22 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length))
             question = str(body.get("question", "")).strip()
             selection = body.get("selection")
+            raw_history = body.get("history", [])
         except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
             return self.send_api_error("Invalid JSON body.")
         if not question:
             return self.send_api_error("Question is required.", 422)
         if selection is not None and not isinstance(selection, dict):
             return self.send_api_error("Selection must be an object.", 422)
+        if not isinstance(raw_history, list):
+            return self.send_api_error("History must be an array.", 422)
+        history = []
+        for item in raw_history[-8:]:
+            if not isinstance(item, dict) or item.get("role") not in {"user", "assistant"}:
+                return self.send_api_error("History contains an invalid message.", 422)
+            content = str(item.get("content", "")).strip()
+            if content:
+                history.append({"role": item["role"], "content": content[:2000]})
         trace = TRACE_STORE.start("chat", session_id)
         attach_comparison_lineage(trace, session_id)
         try:
@@ -526,6 +536,7 @@ class Handler(BaseHTTPRequestHandler):
                 session.report,
                 session_id=session_id,
                 selection=selection,
+                history=history,
             )
             timings = result.get("stage_timings_ms", {})
             TRACE_STORE.measured_span(
@@ -537,6 +548,8 @@ class Handler(BaseHTTPRequestHandler):
                 method=result.get("retrieval", {}).get("method"),
                 top_scores=result.get("retrieval", {}).get("top_scores", [])[:5],
                 selection=selection,
+                history_turns=len(history),
+                contextualized=result.get("retrieval", {}).get("contextualized", False),
             )
             TRACE_STORE.measured_span(
                 trace,
@@ -606,7 +619,7 @@ class Handler(BaseHTTPRequestHandler):
                         ),
                         "dwg": "ready" if ROUTER.dwg.converter_available() else "fallback_without_converter",
                     },
-                    "answer_provider": os.getenv("ANSWER_PROVIDER", "local-extractive-v2"),
+                    "answer_provider": os.getenv("ANSWER_PROVIDER", "local-grounded-synthesis-v3"),
                 }
             )
         if path == "/api/sessions/latest":

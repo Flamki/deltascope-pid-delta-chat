@@ -14,6 +14,8 @@ class ProviderError(RuntimeError):
 def _line_has_valid_citation(line: str, allowed_ids: set[str]) -> bool:
     if not re.search(r"[A-Za-z0-9]", line):
         return True
+    if re.match(r"^(want me to|would you like me to|should i)\b", line.strip(), re.IGNORECASE):
+        return True
     cited = set(re.findall(r"\[([A-Za-z0-9-]+)\]", line))
     return bool(cited) and cited.issubset(allowed_ids)
 
@@ -23,6 +25,7 @@ def generate_with_configured_llm(
     evidence: list[dict],
     fallback: str,
     session_id: str | None = None,
+    history: list[dict] | None = None,
 ) -> dict | None:
     """Call an OpenAI-compatible chat endpoint when explicitly configured.
 
@@ -30,7 +33,7 @@ def generate_with_configured_llm(
     uncited model output is rejected so the caller can use the grounded fallback.
     """
 
-    provider = os.getenv("ANSWER_PROVIDER", "local-extractive-v2")
+    provider = os.getenv("ANSWER_PROVIDER", "local-grounded-synthesis-v3")
     if provider not in {"openai-compatible", "fireworks"}:
         return None
     if provider == "fireworks":
@@ -45,19 +48,35 @@ def generate_with_configured_llm(
         raise ProviderError(f"ANSWER_PROVIDER is {provider} but its API URL, key, or model is missing")
 
     allowed_ids = {item["id"] for item in evidence}
-    context = "\n".join(f"[{item['id']}] {item['source']} page {item.get('page')}: {item['text']}" for item in evidence)
+    context = "\n".join(
+        f"[{item['id']}] {item['source']} page {item.get('page')}: {item['text']}"
+        for item in evidence
+    )
+    conversation = "\n".join(
+        f"{str(item.get('role', '')).upper()}: {str(item.get('content', '')).strip()}"
+        for item in (history or [])[-6:]
+        if item.get("role") in {"user", "assistant"} and str(item.get("content", "")).strip()
+    )
     system = (
-        "You answer questions about two engineering document revisions. Use only the supplied evidence. "
+        "You are a careful engineering coworker reviewing two document revisions with the user. "
+        "Answer the question directly in natural, specific language; synthesize evidence instead of dumping snippets. "
+        "Explain the old and revised state when the evidence supports a change. Mention uncertainty plainly. "
+        "Use only the supplied evidence, and never invent a tag, value, page, relationship, cause, or safety impact. "
         "Return concise plain text with one factual claim per line and no heading. "
         "Every non-empty line must end with one or more supplied citation IDs in square brackets. "
-        "Use citation IDs exactly as supplied. If the evidence is insufficient, say so and cite the evidence that "
-        "shows the limitation. Never invent a tag, value, page, or change."
+        "Use citation IDs exactly as supplied. You may end with one short offer beginning 'Want me to', "
+        "'Would you like me to', or 'Should I' without a citation. If the evidence is insufficient, "
+        "say exactly what is missing."
     )
-    user = f"Question: {question}\n\nEvidence:\n{context}\n\nGrounded draft:\n{fallback}"
+    user = (
+        f"Recent conversation:\n{conversation or '(none)'}\n\n"
+        f"Current question: {question}\n\nEvidence:\n{context}\n\n"
+        f"Deterministic grounded draft (improve its clarity, not its facts):\n{fallback}"
+    )
     payload = json.dumps(
         {
             "model": model,
-            "temperature": 0,
+            "temperature": 0.15,
             "max_tokens": 700,
             "messages": [
                 {"role": "system", "content": system},

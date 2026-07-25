@@ -7,6 +7,8 @@ const state = {
   selectionMode: false,
   selection: null,
   pendingSelection: null,
+  chatHistory: [],
+  chatPending: false,
   filter: "all",
   maxFileBytes: 75 * 1024 * 1024
 };
@@ -114,6 +116,7 @@ $("#upload-form").addEventListener("submit", async event => {
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "Comparison failed.");
     state.session = payload;
+    state.chatHistory = [];
     localStorage.setItem("deltascope-session-id", payload.id);
     localStorage.removeItem("deltascope-skip-restore");
     stopAnimation();
@@ -477,7 +480,10 @@ questionField.addEventListener("keydown", event => {
 $("#chat-form").addEventListener("submit", async event => {
   event.preventDefault();
   const field = $("#question"), question = field.value.trim();
-  if (!question || !state.session) return;
+  if (!question || !state.session || state.chatPending) return;
+  state.chatPending = true;
+  const sendButton = $('#chat-form button[type="submit"]');
+  sendButton.disabled = true;
   const attachment = state.pendingSelection ? structuredClone(state.pendingSelection) : null;
   const selection = attachment
     ? { source: attachment.source, page: attachment.page, region: attachment.region }
@@ -489,18 +495,28 @@ $("#chat-form").addEventListener("submit", async event => {
     const response = await fetch(`/api/sessions/${state.session.id}/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, selection })
+      body: JSON.stringify({ question, selection, history: state.chatHistory.slice(-6) })
     });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error);
     $("#provider-label").textContent = payload.provider.startsWith("fireworks:")
-      ? "Fireworks · grounded in both files + delta"
+      ? "Grounded AI · both files + delta"
       : payload.provider_error
-        ? "Grounded fallback · hosted model unavailable"
-        : "Grounded fallback · both files + delta";
-    pending.remove(); addMessage("assistant", payload.answer, payload.citations);
+        ? "Grounded assistant · model fallback active"
+        : "Grounded assistant · both files + delta";
+    pending.remove();
+    addMessage("assistant", payload.answer, payload.citations);
+    state.chatHistory.push(
+      { role: "user", content: question },
+      { role: "assistant", content: payload.answer }
+    );
+    state.chatHistory = state.chatHistory.slice(-8);
   } catch (error) {
     pending.remove(); addMessage("assistant", `I could not complete that request: ${error.message}`);
+  } finally {
+    state.chatPending = false;
+    sendButton.disabled = false;
+    field.focus();
   }
 });
 
@@ -570,6 +586,8 @@ function resetComparison() {
   state.zoom = 1;
   state.selectionMode = false;
   state.selection = null;
+  state.chatHistory = [];
+  state.chatPending = false;
   clearPendingSelection();
   localStorage.setItem("deltascope-skip-restore", "1");
   localStorage.removeItem("deltascope-session-id");

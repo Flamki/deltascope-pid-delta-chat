@@ -88,6 +88,42 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue(all(citation["source"] in {"PID-A", "PID-B", "DELTA"} for citation in result["citations"]))
         self.assertEqual(set(result["stage_timings_ms"]), {"retrieval", "answer_draft", "llm", "answer"})
         self.assertTrue(all(value >= 0 for value in result["stage_timings_ms"].values()))
+        self.assertNotIn("strongest supporting evidence", result["answer"].lower())
+        self.assertIn("changed from", result["answer"].lower())
+        self.assertNotIn("stainless steel", result["answer"].lower())
+        self.assertEqual(result["provider"], "local-grounded-synthesis-v3")
+
+    def test_chat_resolves_a_short_follow_up_from_recent_context(self):
+        router = AdapterRouter()
+        base = router.ingest("PID-A", self.base_path)
+        revised = router.ingest("PID-B", self.revised_path)
+        report = compare_documents(base, revised)
+        result = answer_question(
+            "What is the revised value?",
+            [base, revised],
+            report,
+            history=[
+                {"role": "user", "content": "What changed about the design pressure?"},
+                {
+                    "role": "assistant",
+                    "content": "Design pressure changed from 10 BARG to 12 BARG. [D-0002]",
+                },
+            ],
+        )
+        self.assertTrue(result["retrieval"]["contextualized"])
+        self.assertTrue(result["answer"].startswith("The revised document states:"))
+        self.assertIn("12 BARG", result["answer"])
+        self.assertTrue(any("PRESSURE" in citation["excerpt"] for citation in result["citations"]))
+
+    def test_chat_refuses_when_the_documents_have_no_support(self):
+        router = AdapterRouter()
+        base = router.ingest("PID-A", self.base_path)
+        revised = router.ingest("PID-B", self.revised_path)
+        report = compare_documents(base, revised)
+        result = answer_question("What should the maintenance team order for lunch?", [base, revised], report)
+        self.assertEqual(result["retrieval_hits"], 0)
+        self.assertEqual(result["citations"], [])
+        self.assertIn("don’t have enough evidence", result["answer"])
 
     def test_selected_region_is_mapped_to_canonical_evidence(self):
         router = AdapterRouter()
@@ -117,6 +153,8 @@ class PipelineTests(unittest.TestCase):
         self.assertGreaterEqual(result["retrieval"]["selection_hits"], 1)
         self.assertEqual(result["citations"][0]["id"], pressure.id)
         self.assertIn("DESIGN PRESSURE 10 BARG", result["citations"][0]["excerpt"])
+        self.assertTrue(any(citation["source"] == "DELTA" for citation in result["citations"]))
+        self.assertIn("Revision check", result["answer"])
 
     def test_moved_unchanged_blocks_are_not_reported_as_changes(self):
         before = self.root / "moved-before.pdf"
@@ -207,6 +245,7 @@ class PipelineTests(unittest.TestCase):
     def test_hosted_answer_requires_allowed_citation_per_line(self):
         allowed = {"D-0001", "PID-A-P1-B2"}
         self.assertTrue(_line_has_valid_citation("Pressure changed. [D-0001]", allowed))
+        self.assertTrue(_line_has_valid_citation("Want me to trace that tag across both revisions?", allowed))
         self.assertFalse(_line_has_valid_citation("Pressure changed.", allowed))
         self.assertFalse(_line_has_valid_citation("Pressure changed. [D-9999]", allowed))
 

@@ -146,8 +146,12 @@ Retrieval spans:
 - every structured delta finding.
 
 Evidence is ranked with deterministic Okapi BM25. The local provider returns
-extractive statements with page/block/region citations. Unsupported questions
-produce a refusal instead of an invented answer. `src/chat/providers.py`
+concise engineering synthesis with page/block/region citations rather than a
+raw snippet dump. It distinguishes direct answers, revision summaries,
+additions/removals, and selected-region questions. A bounded recent conversation
+window resolves grounded follow-ups without allowing chat history to replace
+source evidence. Unsupported questions produce a useful refusal instead of an
+invented answer. `src/chat/providers.py`
 implements Fireworks AI and generic OpenAI-compatible LLM clients. Hosted output
 is accepted only when each factual line includes a retrieved citation ID;
 otherwise the system uses the deterministic fallback and records the provider
