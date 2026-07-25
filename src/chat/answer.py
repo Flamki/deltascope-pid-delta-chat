@@ -110,11 +110,54 @@ def bm25_rank(query_text: str, corpus: list[dict]) -> tuple[list[tuple[float, di
     }
 
 
+def selected_region_items(documents: list[CanonicalDocument], selection: dict | None) -> list[dict]:
+    if not selection:
+        return []
+    source = str(selection.get("source", ""))
+    try:
+        page_number = int(selection.get("page", 1))
+        region = selection["region"]
+        normalized = [float(region[key]) for key in ("x0", "y0", "x1", "y1")]
+    except (KeyError, TypeError, ValueError):
+        return []
+    if source not in {"PID-A", "PID-B"} or not all(0 <= value <= 1 for value in normalized):
+        return []
+    x0, y0, x1, y1 = normalized
+    if x1 <= x0 or y1 <= y0:
+        return []
+    document = next((item for item in documents if item.pid == source), None)
+    page = next((item for item in document.pages if item.number == page_number), None) if document else None
+    if page is None:
+        return []
+    selected = []
+    for block in page.blocks:
+        intersection_width = max(0.0, min(block.region.x1, x1 * page.width) - max(block.region.x0, x0 * page.width))
+        intersection_height = max(0.0, min(block.region.y1, y1 * page.height) - max(block.region.y0, y0 * page.height))
+        if intersection_width <= 0 or intersection_height <= 0:
+            continue
+        selected.append(
+            {
+                "kind": "document",
+                "source": document.pid,
+                "id": block.id,
+                "page": block.page,
+                "region": vars(block.region),
+                "text": block.text,
+                "_selection_overlap": intersection_width * intersection_height,
+            }
+        )
+    selected.sort(key=lambda item: (-item["_selection_overlap"], item["id"]))
+    for item in selected:
+        item.pop("_selection_overlap", None)
+    return selected
+
+
 def answer_question(
     question: str,
     documents: list[CanonicalDocument],
     report: dict,
     session_id: str | None = None,
+    selection: dict | None = None,
 ) -> dict:
     retrieval_started = time.perf_counter()
     corpus: list[dict] = []
@@ -133,11 +176,32 @@ def answer_question(
     for finding in report["findings"]:
         corpus.append(delta_item(finding))
 
-    scored, retrieval = bm25_rank(question, corpus)
     top_k = max(1, int(os.getenv("RETRIEVAL_TOP_K", "6")))
+    region_items = selected_region_items(documents, selection)
+    retrieval_query = question
+    if selection and region_items:
+        retrieval_query = f"{question} {' '.join(item['text'] for item in region_items[:4])}"
+    scored, retrieval = bm25_rank(retrieval_query, corpus)
 
     lower = question.lower()
-    if "only in file b" in lower or "only in pid-b" in lower or "added" in lower:
+    if selection:
+        if not region_items:
+            selected = []
+            lead = "No indexed text or engineering label intersects the selected area."
+        else:
+            selected = region_items[: min(3, top_k)]
+            selected_ids = {item["id"] for item in selected}
+            selected.extend(item for _, item in scored if item["id"] not in selected_ids)
+            selected = selected[:top_k]
+            source_label = "File A" if selection.get("source") == "PID-A" else "File B"
+            lead = (
+                f"I grounded this answer in the selected area on {source_label}, "
+                f"page {selection.get('page', 1)}, plus matching evidence from both documents and the delta."
+            )
+            retrieval["method"] = "region+okapi-bm25"
+            retrieval["selection_hits"] = len(region_items)
+            retrieval["selection"] = selection
+    elif "only in file b" in lower or "only in pid-b" in lower or "added" in lower:
         added = [finding for finding in report["findings"] if finding["change_type"] == "added"]
         selected = [delta_item(finding) for finding in added[:top_k]]
         lead = f"I found {len(added)} additions in File B."

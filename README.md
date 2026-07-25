@@ -50,7 +50,9 @@ Production credentials are configured in Vercel, never committed.
 Upload File A (base) and File B (revised), then choose **Compare documents**. The application creates a comparison workspace with:
 
 - grounded chat on the left;
-- File A, File B, and Delta tabs on the right;
+- File A, File B, visual Overlay, and Delta tabs on the right;
+- a clean canvas viewer with page navigation, zoom, and adjustable A/B overlay;
+- drag-to-select drawing regions that can be attached directly to a chat question;
 - clickable page/block citations;
 - citation clicks that open the exact highlighted bounding region;
 - JSON, Markdown, and HTML report exports;
@@ -148,6 +150,13 @@ implements Fireworks AI and generic OpenAI-compatible LLM clients. Hosted output
 is accepted only when each factual line includes a retrieved citation ID;
 otherwise the system uses the deterministic fallback and records the provider
 failure.
+
+The workspace can also ground a question in a user-selected drawing area.
+Selections are sent as normalized page coordinates, mapped back to the
+canonical page coordinate system, and intersected with indexed blocks before
+BM25 expands the evidence across both revisions and the delta report. This
+keeps region chat traceable to real source blocks rather than treating the
+selected pixels as an unverified prompt.
 
 To enable Fireworks, create an ignored `.env`:
 

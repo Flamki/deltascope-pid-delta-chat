@@ -89,6 +89,35 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(set(result["stage_timings_ms"]), {"retrieval", "answer_draft", "llm", "answer"})
         self.assertTrue(all(value >= 0 for value in result["stage_timings_ms"].values()))
 
+    def test_selected_region_is_mapped_to_canonical_evidence(self):
+        router = AdapterRouter()
+        base = router.ingest("PID-A", self.base_path)
+        revised = router.ingest("PID-B", self.revised_path)
+        report = compare_documents(base, revised)
+        pressure = next(block for block in base.blocks if "PRESSURE" in block.text)
+        page = base.pages[pressure.page - 1]
+        padding = 2
+        selection = {
+            "source": "PID-A",
+            "page": pressure.page,
+            "region": {
+                "x0": max(0, pressure.region.x0 - padding) / page.width,
+                "y0": max(0, pressure.region.y0 - padding) / page.height,
+                "x1": min(page.width, pressure.region.x1 + padding) / page.width,
+                "y1": min(page.height, pressure.region.y1 + padding) / page.height,
+            },
+        }
+        result = answer_question(
+            "What is shown in this selected area?",
+            [base, revised],
+            report,
+            selection=selection,
+        )
+        self.assertEqual(result["retrieval"]["method"], "region+okapi-bm25")
+        self.assertGreaterEqual(result["retrieval"]["selection_hits"], 1)
+        self.assertEqual(result["citations"][0]["id"], pressure.id)
+        self.assertIn("DESIGN PRESSURE 10 BARG", result["citations"][0]["excerpt"])
+
     def test_moved_unchanged_blocks_are_not_reported_as_changes(self):
         before = self.root / "moved-before.pdf"
         after = self.root / "moved-after.pdf"

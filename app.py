@@ -17,6 +17,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+import fitz
+
 from src.canonical import CanonicalDocument
 from src.chat import answer_question
 from src.delta import compare_documents
@@ -501,10 +503,13 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
             body = json.loads(self.rfile.read(length))
             question = str(body.get("question", "")).strip()
+            selection = body.get("selection")
         except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
             return self.send_api_error("Invalid JSON body.")
         if not question:
             return self.send_api_error("Question is required.", 422)
+        if selection is not None and not isinstance(selection, dict):
+            return self.send_api_error("Selection must be an object.", 422)
         trace = TRACE_STORE.start("chat", session_id)
         attach_comparison_lineage(trace, session_id)
         try:
@@ -513,6 +518,7 @@ class Handler(BaseHTTPRequestHandler):
                 [session.base, session.revised],
                 session.report,
                 session_id=session_id,
+                selection=selection,
             )
             timings = result.get("stage_timings_ms", {})
             TRACE_STORE.measured_span(
@@ -523,6 +529,7 @@ class Handler(BaseHTTPRequestHandler):
                 sources=list({c["source"] for c in result["citations"]}),
                 method=result.get("retrieval", {}).get("method"),
                 top_scores=result.get("retrieval", {}).get("top_scores", [])[:5],
+                selection=selection,
             )
             TRACE_STORE.measured_span(
                 trace,
@@ -611,6 +618,31 @@ class Handler(BaseHTTPRequestHandler):
             source = session.base_path if match.group(2) == "PID-A" else session.revised_path
             media = "application/pdf" if source.suffix.lower() == ".pdf" else "application/acad"
             return self.send_bytes(source.read_bytes(), media, disposition=f'inline; filename="{source.name[2:]}"')
+        match = re.fullmatch(r"/api/sessions/([^/]+)/documents/(PID-A|PID-B)/render\.png", path)
+        if match:
+            session = self.get_session(match.group(1))
+            if not session:
+                return self.send_api_error("Session not found.", 404)
+            pid = match.group(2)
+            source = session.base_path if pid == "PID-A" else session.revised_path
+            document = session.base if pid == "PID-A" else session.revised
+            if source.suffix.lower() != ".pdf":
+                return self.send_api_error("PNG rendering is available for PDF sources.", 422)
+            query = parse_qs(parsed.query)
+            try:
+                page_number = int((query.get("page") or ["1"])[0])
+                scale = min(1.5, max(0.75, float((query.get("scale") or ["1"])[0])))
+            except ValueError:
+                return self.send_api_error("Invalid page or scale.", 422)
+            block_id = (query.get("block_id") or [""])[0]
+            block = next((item for item in document.blocks if item.id == block_id), None) if block_id else None
+            pdf_content = create_highlight_pdf(source, block) if block else source.read_bytes()
+            with fitz.open(stream=pdf_content, filetype="pdf") as pdf:
+                if page_number < 1 or page_number > len(pdf):
+                    return self.send_api_error("Page not found.", 404)
+                pixmap = pdf[page_number - 1].get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
+                content = pixmap.tobytes("png")
+            return self.send_bytes(content, "image/png")
         match = re.fullmatch(r"/api/sessions/([^/]+)/documents/(PID-A|PID-B)/view\.svg", path)
         if match:
             session = self.get_session(match.group(1))

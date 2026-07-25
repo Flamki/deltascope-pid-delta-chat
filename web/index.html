@@ -189,6 +189,10 @@
                 <button class="chat-jump hidden" id="scroll-to-bottom" type="button" aria-label="Scroll to latest message" title="Scroll to latest">
                   <svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg>
                 </button>
+                <div class="selection-context hidden" id="selection-context">
+                  <span><i></i><b id="selection-context-label">File A · Page 1 selection</b></span>
+                  <button id="clear-selection-context" type="button" aria-label="Remove selected region">×</button>
+                </div>
                 <textarea id="question" rows="1" wrap="soft" placeholder="Ask about either document or the delta..." aria-label="Ask a question"></textarea>
                 <button type="submit" aria-label="Send question">
                   <svg viewBox="0 0 24 24"><path d="m5 12 14-7-5 14-2-6-7-1Zm7 1 7-8"/></svg>
@@ -204,17 +208,45 @@
               <div class="document-tabs" role="tablist">
                 <button class="document-tab active" data-tab="PID-A"><span>A</span><b>File A</b><small id="tab-a-name"></small></button>
                 <button class="document-tab" data-tab="PID-B"><span>B</span><b>File B</b><small id="tab-b-name"></small></button>
+                <button class="document-tab overlay-tab" data-tab="OVERLAY"><span>◐</span><b>Overlay</b><small>Compare visually</small></button>
                 <button class="document-tab delta-tab" data-tab="DELTA"><span>&#916;</span><b>Delta</b><small id="tab-delta-count"></small></button>
               </div>
-              <div class="viewer-toolbar">
-                <div id="viewer-label">File A</div>
-                <div class="viewer-tools">
-                  <span id="page-label">Page 1</span>
-                  <button id="open-document" title="Open source in new tab"><svg viewBox="0 0 24 24"><path d="M14 5h5v5M12 12l7-7M19 14v5H5V5h5"/></svg></button>
-                </div>
-              </div>
               <div class="viewer-stage" id="viewer-stage">
-                <iframe id="document-frame" title="Uploaded document"></iframe>
+                <div class="drawing-viewer" id="drawing-viewer">
+                  <div class="canvas-toolbar glass">
+                    <button id="previous-page" type="button" aria-label="Previous page" title="Previous page"><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg></button>
+                    <span id="page-label">Page 1 of 1</span>
+                    <button id="next-page" type="button" aria-label="Next page" title="Next page"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></button>
+                    <i></i>
+                    <button id="zoom-out" type="button" aria-label="Zoom out" title="Zoom out">−</button>
+                    <span id="zoom-label">Fit</span>
+                    <button id="zoom-in" type="button" aria-label="Zoom in" title="Zoom in">+</button>
+                    <i></i>
+                    <label class="overlay-control hidden" id="overlay-control">
+                      <span>Overlay</span>
+                      <input id="overlay-opacity" type="range" min="10" max="90" value="50" aria-label="Overlay opacity">
+                    </label>
+                    <label class="selection-source hidden" id="selection-source-wrap">
+                      <span>Select from</span>
+                      <select id="selection-source" aria-label="Selection source"><option value="PID-A">File A</option><option value="PID-B">File B</option></select>
+                    </label>
+                    <button class="select-region-button" id="select-region" type="button" title="Select an area to ask about">
+                      <svg viewBox="0 0 24 24"><path d="M5 9V5h4M15 5h4v4M19 15v4h-4M9 19H5v-4"/></svg><span>Select area</span>
+                    </button>
+                    <button id="open-document" type="button" title="Open original document" aria-label="Open original document"><svg viewBox="0 0 24 24"><path d="M14 5h5v5M12 12l7-7M19 14v5H5V5h5"/></svg></button>
+                  </div>
+                  <div class="document-scroll" id="document-scroll">
+                    <div class="document-page" id="document-page">
+                      <img id="viewer-image-primary" alt="Engineering drawing">
+                      <img class="overlay-image hidden" id="viewer-image-overlay" alt="Overlay drawing">
+                      <div class="selection-layer" id="selection-layer" aria-label="Drag to select a drawing region">
+                        <div class="selection-box hidden" id="selection-box"></div>
+                        <button class="selection-action glass hidden" id="ask-selection" type="button"><span>✦</span> Ask about selection</button>
+                      </div>
+                      <div class="viewer-loading" id="viewer-loading"><i></i><span>Rendering drawing</span></div>
+                    </div>
+                  </div>
+                </div>
                 <div class="dwg-viewer hidden" id="dwg-viewer">
                   <span class="dwg-icon">DWG</span>
                   <h3>DWG fallback indexing active</h3>

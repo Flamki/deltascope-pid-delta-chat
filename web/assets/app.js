@@ -2,6 +2,11 @@ const state = {
   files: { a: null, b: null },
   session: null,
   activeTab: "PID-A",
+  viewPage: 1,
+  zoom: 1,
+  selectionMode: false,
+  selection: null,
+  pendingSelection: null,
   filter: "all",
   maxFileBytes: 75 * 1024 * 1024
 };
@@ -145,6 +150,12 @@ function renderWorkspace() {
   $("#export-markup-b").href = session.links.markup_revised || "#";
   $("#export-markup-a").classList.toggle("hidden", !session.links.markup_base);
   $("#export-markup-b").classList.toggle("hidden", !session.links.markup_revised);
+  const overlayAvailable = !(
+    (a.format === "dwg" && !a.metadata.geometry_available)
+    || (b.format === "dwg" && !b.metadata.geometry_available)
+  );
+  $(".overlay-tab").disabled = !overlayAvailable;
+  $(".overlay-tab").title = overlayAvailable ? "Overlay both documents" : "Overlay requires renderable PDF or DWG geometry";
   renderFindings();
   switchDocument("PID-A");
 }
@@ -164,41 +175,186 @@ function renderFindings() {
   $$(".finding-card").forEach(card => card.addEventListener("click", () => openCitation(card.dataset.source, card.dataset.page, card.dataset.block)));
 }
 
-function switchDocument(tab, page = 1, highlightBlockId = "") {
-  state.activeTab = tab;
-  $$(".document-tab").forEach(button => button.classList.toggle("active", button.dataset.tab === tab));
-  $("#delta-viewer").classList.toggle("hidden", tab !== "DELTA");
-  $("#document-frame").classList.toggle("hidden", tab === "DELTA");
-  $("#dwg-viewer").classList.add("hidden");
-  if (tab === "DELTA") {
-    $("#viewer-label").textContent = "Structured delta report";
-    $("#page-label").textContent = `${state.session.report.findings.length} findings`;
-    return;
-  }
-  const document = state.session.documents[tab];
-  const link = tab === "PID-A" ? state.session.links.base : state.session.links.revised;
-  $("#viewer-label").textContent = `${tab} · ${document.filename}`;
-  $("#page-label").textContent = `Page ${page} of ${document.metadata.page_count || document.pages.length}`;
+function documentPageCount(pid) {
+  const document = state.session.documents[pid];
+  return Number(document.metadata.page_count || document.pages.length || 1);
+}
+
+function drawingUrl(pid, page, highlightBlockId = "") {
+  const document = state.session.documents[pid];
   if (document.format === "dwg") {
-    if (document.metadata.geometry_available) {
-      $("#document-frame").classList.remove("hidden");
-      const query = new URLSearchParams({ page: String(page) });
-      if (highlightBlockId) query.set("block_id", highlightBlockId);
-      $("#document-frame").src = `/api/sessions/${state.session.id}/documents/${tab}/view.svg?${query}`;
-    } else {
-      $("#document-frame").classList.add("hidden");
-      $("#dwg-viewer").classList.remove("hidden");
-    }
+    const query = new URLSearchParams({ page: String(page) });
+    if (highlightBlockId) query.set("block_id", highlightBlockId);
+    return `/api/sessions/${state.session.id}/documents/${pid}/view.svg?${query}`;
+  }
+  const query = new URLSearchParams({ page: String(page), scale: "1" });
+  if (highlightBlockId) query.set("block_id", highlightBlockId);
+  return `/api/sessions/${state.session.id}/documents/${pid}/render.png?${query}`;
+}
+
+function clearCanvasSelection() {
+  state.selection = null;
+  $("#selection-box").classList.add("hidden");
+  $("#ask-selection").classList.add("hidden");
+}
+
+function setSelectionMode(enabled) {
+  state.selectionMode = enabled;
+  $("#select-region").classList.toggle("active", enabled);
+  $("#selection-layer").classList.toggle("active", enabled);
+  $("#select-region span").textContent = enabled ? "Drag on drawing" : "Select area";
+  if (!enabled) clearCanvasSelection();
+}
+
+function renderDrawing(highlightBlockId = "") {
+  const tab = state.activeTab;
+  const isOverlay = tab === "OVERLAY";
+  const primaryPid = isOverlay ? "PID-A" : tab;
+  const primaryDocument = state.session.documents[primaryPid];
+  const pageCount = isOverlay
+    ? Math.min(documentPageCount("PID-A"), documentPageCount("PID-B"))
+    : documentPageCount(primaryPid);
+  state.viewPage = Math.min(Math.max(1, state.viewPage), pageCount);
+  $("#page-label").textContent = `Page ${state.viewPage} of ${pageCount}`;
+  $("#previous-page").disabled = state.viewPage <= 1;
+  $("#next-page").disabled = state.viewPage >= pageCount;
+  $("#overlay-control").classList.toggle("hidden", !isOverlay);
+  $("#selection-source-wrap").classList.toggle("hidden", !isOverlay);
+  $("#viewer-image-overlay").classList.toggle("hidden", !isOverlay);
+  $("#document-page").style.width = `${state.zoom * 100}%`;
+  $("#zoom-label").textContent = state.zoom === 1 ? "Fit" : `${Math.round(state.zoom * 100)}%`;
+  clearCanvasSelection();
+
+  const cannotRender = primaryDocument.format === "dwg" && !primaryDocument.metadata.geometry_available;
+  $("#drawing-viewer").classList.toggle("hidden", cannotRender);
+  $("#dwg-viewer").classList.toggle("hidden", !cannotRender);
+  if (cannotRender) return;
+
+  const primary = $("#viewer-image-primary");
+  const overlay = $("#viewer-image-overlay");
+  $("#viewer-loading span").textContent = "Rendering drawing";
+  $("#viewer-loading").classList.remove("hidden");
+  primary.onload = () => $("#viewer-loading").classList.add("hidden");
+  primary.onerror = () => {
+    $("#viewer-loading span").textContent = "Drawing could not be rendered";
+  };
+  primary.src = drawingUrl(primaryPid, state.viewPage, highlightBlockId);
+  if (isOverlay) {
+    overlay.src = drawingUrl("PID-B", state.viewPage);
+    overlay.style.opacity = String(Number($("#overlay-opacity").value) / 100);
   } else {
-    $("#document-frame").classList.remove("hidden");
-    const source = highlightBlockId
-      ? `/api/sessions/${state.session.id}/documents/${tab}/highlight?block_id=${encodeURIComponent(highlightBlockId)}`
-      : link;
-    $("#document-frame").src = `${source}#page=${page}&view=FitH`;
+    overlay.removeAttribute("src");
   }
 }
 
+function switchDocument(tab, page = 1, highlightBlockId = "") {
+  state.activeTab = tab;
+  state.viewPage = Number(page || 1);
+  setSelectionMode(false);
+  $$(".document-tab").forEach(button => button.classList.toggle("active", button.dataset.tab === tab));
+  $("#delta-viewer").classList.toggle("hidden", tab !== "DELTA");
+  $("#drawing-viewer").classList.toggle("hidden", tab === "DELTA");
+  $("#dwg-viewer").classList.add("hidden");
+  if (tab === "DELTA") return;
+  renderDrawing(highlightBlockId);
+}
+
 $$(".document-tab").forEach(button => button.addEventListener("click", () => switchDocument(button.dataset.tab)));
+$("#previous-page").addEventListener("click", () => {
+  if (state.viewPage > 1) {
+    state.viewPage -= 1;
+    renderDrawing();
+  }
+});
+$("#next-page").addEventListener("click", () => {
+  state.viewPage += 1;
+  renderDrawing();
+});
+$("#zoom-out").addEventListener("click", () => {
+  state.zoom = Math.max(1, Math.round((state.zoom - 0.25) * 100) / 100);
+  renderDrawing();
+});
+$("#zoom-in").addEventListener("click", () => {
+  state.zoom = Math.min(2.5, Math.round((state.zoom + 0.25) * 100) / 100);
+  renderDrawing();
+});
+$("#overlay-opacity").addEventListener("input", event => {
+  $("#viewer-image-overlay").style.opacity = String(Number(event.target.value) / 100);
+});
+$("#select-region").addEventListener("click", () => setSelectionMode(!state.selectionMode));
+
+let selectionDragStart = null;
+const selectionLayer = $("#selection-layer");
+
+function normalizedSelectionPoint(event) {
+  const bounds = selectionLayer.getBoundingClientRect();
+  return {
+    x: Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width)),
+    y: Math.min(1, Math.max(0, (event.clientY - bounds.top) / bounds.height))
+  };
+}
+
+function drawSelectionBox(start, end) {
+  const x0 = Math.min(start.x, end.x), y0 = Math.min(start.y, end.y);
+  const x1 = Math.max(start.x, end.x), y1 = Math.max(start.y, end.y);
+  const box = $("#selection-box");
+  box.classList.remove("hidden");
+  box.style.left = `${x0 * 100}%`;
+  box.style.top = `${y0 * 100}%`;
+  box.style.width = `${(x1 - x0) * 100}%`;
+  box.style.height = `${(y1 - y0) * 100}%`;
+  return { x0, y0, x1, y1 };
+}
+
+selectionLayer.addEventListener("pointerdown", event => {
+  if (!state.selectionMode || event.target.closest("#ask-selection")) return;
+  event.preventDefault();
+  selectionDragStart = normalizedSelectionPoint(event);
+  selectionLayer.setPointerCapture(event.pointerId);
+  clearCanvasSelection();
+});
+
+selectionLayer.addEventListener("pointermove", event => {
+  if (!selectionDragStart || !state.selectionMode) return;
+  drawSelectionBox(selectionDragStart, normalizedSelectionPoint(event));
+});
+
+selectionLayer.addEventListener("pointerup", event => {
+  if (!selectionDragStart || !state.selectionMode) return;
+  const region = drawSelectionBox(selectionDragStart, normalizedSelectionPoint(event));
+  selectionDragStart = null;
+  if (region.x1 - region.x0 < 0.015 || region.y1 - region.y0 < 0.015) {
+    clearCanvasSelection();
+    return;
+  }
+  const source = state.activeTab === "OVERLAY" ? $("#selection-source").value : state.activeTab;
+  state.selection = { source, page: state.viewPage, region };
+  const action = $("#ask-selection");
+  action.style.left = `${Math.min(82, region.x1 * 100)}%`;
+  action.style.top = `${Math.min(90, region.y1 * 100 + 2)}%`;
+  action.classList.remove("hidden");
+});
+
+function clearPendingSelection() {
+  state.pendingSelection = null;
+  $("#selection-context").classList.add("hidden");
+}
+
+$("#ask-selection").addEventListener("click", event => {
+  event.stopPropagation();
+  if (!state.selection) return;
+  state.pendingSelection = structuredClone(state.selection);
+  const sourceLabel = state.pendingSelection.source === "PID-A" ? "File A" : "File B";
+  $("#selection-context-label").textContent = `${sourceLabel} · Page ${state.pendingSelection.page} · selected area`;
+  $("#selection-context").classList.remove("hidden");
+  if (!questionField.value.trim()) {
+    questionField.value = "What is shown in this selected area, and does it change between the documents?";
+  }
+  resizeQuestionField();
+  questionField.focus();
+});
+
+$("#clear-selection-context").addEventListener("click", clearPendingSelection);
 $$(".delta-filters button").forEach(button => button.addEventListener("click", () => {
   $$(".delta-filters button").forEach(item => item.classList.remove("active"));
   button.classList.add("active"); state.filter = button.dataset.filter; renderFindings();
@@ -215,7 +371,8 @@ function openCitation(source, page, blockId = "", targetSource = "") {
 
 $("#open-document").addEventListener("click", () => {
   if (!state.session || state.activeTab === "DELTA") return;
-  const link = state.activeTab === "PID-A" ? state.session.links.base : state.session.links.revised;
+  const source = state.activeTab === "OVERLAY" ? $("#selection-source").value : state.activeTab;
+  const link = source === "PID-A" ? state.session.links.base : state.session.links.revised;
   window.open(link, "_blank", "noopener");
 });
 
@@ -277,11 +434,15 @@ $("#chat-form").addEventListener("submit", async event => {
   event.preventDefault();
   const field = $("#question"), question = field.value.trim();
   if (!question || !state.session) return;
+  const selection = state.pendingSelection ? structuredClone(state.pendingSelection) : null;
   addMessage("user", question); field.value = ""; resizeQuestionField();
+  clearPendingSelection();
   const pending = addMessage("assistant", "Searching both documents and the delta report...");
   try {
     const response = await fetch(`/api/sessions/${state.session.id}/chat`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question })
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, selection })
     });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error);
@@ -355,7 +516,14 @@ $("#sidebar-export").addEventListener("click", event => {
 });
 
 function resetComparison() {
-  state.session = null; state.files = { a: null, b: null }; state.activeTab = "PID-A";
+  state.session = null;
+  state.files = { a: null, b: null };
+  state.activeTab = "PID-A";
+  state.viewPage = 1;
+  state.zoom = 1;
+  state.selectionMode = false;
+  state.selection = null;
+  clearPendingSelection();
   localStorage.setItem("deltascope-skip-restore", "1");
   localStorage.removeItem("deltascope-session-id");
   $("#file-a").value = ""; $("#file-b").value = ""; setFile("a", null); setFile("b", null);
