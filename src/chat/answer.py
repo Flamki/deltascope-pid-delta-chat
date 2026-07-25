@@ -523,6 +523,9 @@ def answer_question(
         response = generated["answer"]
         selected_citation_ids = set(generated["cited_ids"])
         citations = [citation for citation in citations if citation["id"] in selected_citation_ids]
+    else:
+        selected_citation_ids = set(re.findall(r"\[([A-Za-z0-9-]+)\]", response))
+        citations = [citation for citation in citations if citation["id"] in selected_citation_ids]
     answer_ms = round((time.perf_counter() - answer_started) * 1000, 2)
     return {
         "answer": response,
