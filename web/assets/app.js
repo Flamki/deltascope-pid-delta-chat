@@ -125,8 +125,6 @@ $("#upload-form").addEventListener("submit", async event => {
     state.session = payload;
     state.chatHistory = [];
     resetDrawingAssetCache();
-    localStorage.setItem("deltascope-session-id", payload.id);
-    localStorage.removeItem("deltascope-skip-restore");
     stopAnimation();
     await new Promise(resolve => setTimeout(resolve, 420));
     renderWorkspace();
@@ -736,8 +734,6 @@ function resetComparison() {
   state.chatHistory = [];
   state.chatPending = false;
   clearPendingSelection();
-  localStorage.setItem("deltascope-skip-restore", "1");
-  localStorage.removeItem("deltascope-session-id");
   $("#file-a").value = ""; $("#file-b").value = ""; setFile("a", null); setFile("b", null);
   $("#chat-thread").querySelectorAll(".message:not(:first-child)").forEach(message => message.remove());
   chatThread.scrollTop = 0;
@@ -746,24 +742,13 @@ function resetComparison() {
 }
 $("#new-comparison").addEventListener("click", resetComparison);
 
-async function restoreLatestComparison() {
-  if (localStorage.getItem("deltascope-skip-restore") === "1") return;
-  try {
-    const sessionId = localStorage.getItem("deltascope-session-id");
-    const endpoint = sessionId ? `/api/sessions/${encodeURIComponent(sessionId)}` : "/api/sessions/latest";
-    const response = await fetch(endpoint);
-    if (!response.ok) return;
-    state.session = await response.json();
-    resetDrawingAssetCache();
-    localStorage.setItem("deltascope-session-id", state.session.id);
-    renderWorkspace();
-    showScreen("workspace-screen");
-  } catch {
-    // A missing or expired local session should simply show the uploader.
-  }
-}
-
 async function initializeRuntime() {
+  // The root route is intentionally a clean entry point. Completed comparisons
+  // are never restored implicitly: a visitor must upload two files before the
+  // workspace can be shown.
+  localStorage.removeItem("deltascope-session-id");
+  localStorage.removeItem("deltascope-skip-restore");
+  showScreen("upload-screen");
   try {
     const response = await fetch("/api/health");
     if (response.ok) {
@@ -773,6 +758,5 @@ async function initializeRuntime() {
   } catch {
     // Built-in defaults remain usable if the capability check is unavailable.
   }
-  await restoreLatestComparison();
 }
 initializeRuntime();
