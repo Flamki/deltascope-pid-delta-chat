@@ -24,7 +24,13 @@ from src.canonical import CanonicalDocument
 from src.chat import answer_question
 from src.delta import compare_documents
 from src.ingest.router import AdapterRouter
-from src.markup import create_dwg_svg, create_highlight_pdf, create_markup_pdf
+from src.markup import (
+    OVERLAY_INK_COLORS,
+    colorize_ink,
+    create_dwg_svg,
+    create_highlight_pdf,
+    create_markup_pdf,
+)
 from src.observability import TraceStore
 from src.storage import DurableStore
 
@@ -651,6 +657,9 @@ class Handler(BaseHTTPRequestHandler):
                 ):
                     return self.send_api_error("Crop coordinates must be an ordered normalized region.", 422)
             scale = min(4.0 if crop_values else 1.5, max(0.75, requested_scale))
+            ink_color = (query.get("ink") or [""])[0].lower()
+            if ink_color and ink_color not in OVERLAY_INK_COLORS:
+                return self.send_api_error("Overlay ink must be red or green.", 422)
             block_id = (query.get("block_id") or [""])[0]
             block = next((item for item in document.blocks if item.id == block_id), None) if block_id else None
             pdf_content = create_highlight_pdf(source, block) if block else source.read_bytes()
@@ -670,6 +679,8 @@ class Handler(BaseHTTPRequestHandler):
                     maximum_pixels = 4_000_000
                     scale = min(scale, math.sqrt(maximum_pixels / max(1.0, clip.width * clip.height)))
                 pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale), clip=clip, alpha=False)
+                if ink_color:
+                    pixmap = colorize_ink(pixmap, ink_color)
                 content = pixmap.tobytes("png")
             return self.send_bytes(content, "image/png")
         match = re.fullmatch(r"/api/sessions/([^/]+)/documents/(PID-A|PID-B)/view\.svg", path)

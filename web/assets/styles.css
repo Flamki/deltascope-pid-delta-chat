@@ -425,7 +425,28 @@ main{min-height:100vh}.screen{display:none;min-height:100vh}.screen.active{displ
   color:#62758a;
   font-size:9px;
 }
-.overlay-control input{width:82px;accent-color:#287bea;cursor:pointer}
+.overlay-control input{
+  width:74px;
+  accent-color:#24885c;
+  cursor:pointer;
+}
+.overlay-key{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  font-size:8.5px;
+  font-weight:650;
+}
+.overlay-key i{
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  box-shadow:0 0 0 3px rgba(71,91,113,.07);
+}
+.file-a-key{color:#b43b47}
+.file-a-key i{background:#df3d4d}
+.file-b-key{color:#27805b}
+.file-b-key i{background:#2fa66f}
 .selection-source select{
   height:29px;
   padding:0 25px 0 8px;
@@ -610,7 +631,8 @@ main{min-height:100vh}.screen{display:none;min-height:100vh}.screen.active{displ
   .document-tab{grid-template-columns:26px 1fr;grid-template-rows:1fr}
   .document-tab>span{grid-row:auto;width:24px;height:28px}
   .canvas-toolbar{left:10px;right:10px;transform:none;max-width:none}
-  .overlay-control span,.selection-source>span{display:none}
+  .selection-source>span{display:none}
+  .overlay-key{font-size:0;gap:0}
   .document-scroll{padding:68px 8px 18px}
   .canvas-toolbar .select-region-button span{display:none}
 }

@@ -51,7 +51,8 @@ Upload File A (base) and File B (revised), then choose **Compare documents**. Th
 
 - grounded chat on the left;
 - File A, File B, visual Overlay, and Delta tabs on the right;
-- a clean canvas viewer with page navigation, zoom, and adjustable A/B overlay;
+- a clean canvas viewer with page navigation, zoom, and an adjustable
+  red/green A/B overlay where shared geometry resolves dark;
 - drag-to-select drawing regions that attach a server-rendered visual preview
   and exact normalized source coordinates directly to a chat question;
 - clickable page/block citations;

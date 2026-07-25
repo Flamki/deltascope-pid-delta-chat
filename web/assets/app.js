@@ -180,7 +180,7 @@ function documentPageCount(pid) {
   return Number(document.metadata.page_count || document.pages.length || 1);
 }
 
-function drawingUrl(pid, page, highlightBlockId = "") {
+function drawingUrl(pid, page, highlightBlockId = "", inkColor = "") {
   const document = state.session.documents[pid];
   if (document.format === "dwg") {
     const query = new URLSearchParams({ page: String(page) });
@@ -189,6 +189,7 @@ function drawingUrl(pid, page, highlightBlockId = "") {
   }
   const query = new URLSearchParams({ page: String(page), scale: "1" });
   if (highlightBlockId) query.set("block_id", highlightBlockId);
+  if (inkColor) query.set("ink", inkColor);
   return `/api/sessions/${state.session.id}/documents/${pid}/render.png?${query}`;
 }
 
@@ -254,9 +255,9 @@ function renderDrawing(highlightBlockId = "") {
   primary.onerror = () => {
     $("#viewer-loading span").textContent = "Drawing could not be rendered";
   };
-  primary.src = drawingUrl(primaryPid, state.viewPage, highlightBlockId);
+  primary.src = drawingUrl(primaryPid, state.viewPage, highlightBlockId, isOverlay ? "red" : "");
   if (isOverlay) {
-    overlay.src = drawingUrl("PID-B", state.viewPage);
+    overlay.src = drawingUrl("PID-B", state.viewPage, "", "green");
     overlay.style.opacity = String(Number($("#overlay-opacity").value) / 100);
   } else {
     overlay.removeAttribute("src");

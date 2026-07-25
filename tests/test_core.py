@@ -16,7 +16,7 @@ from src.chat.providers import _line_has_valid_citation
 from src.delta import compare_documents
 from src.ingest.router import AdapterRouter
 from src.ingest.dwg import DwgAdapter
-from src.markup import create_dwg_svg, create_highlight_pdf, create_markup_pdf
+from src.markup import colorize_ink, create_dwg_svg, create_highlight_pdf, create_markup_pdf
 
 
 def create_pdf(path: Path, lines: list[str]):
@@ -221,6 +221,21 @@ class PipelineTests(unittest.TestCase):
             self.assertGreater(len(document[0].get_drawings()), 0)
         with fitz.open(stream=marked_up, filetype="pdf") as document:
             self.assertGreater(len(document[0].get_drawings()), 0)
+
+    def test_revision_overlay_uses_red_and_green_ink_on_white(self):
+        source = fitz.Pixmap(
+            fitz.csRGB,
+            3,
+            1,
+            bytes((0, 0, 0, 128, 128, 128, 255, 255, 255)),
+            False,
+        )
+        red = colorize_ink(source, "red")
+        green = colorize_ink(source, "green")
+        self.assertEqual(tuple(red.samples[:3]), (255, 0, 0))
+        self.assertEqual(tuple(green.samples[:3]), (0, 165, 0))
+        self.assertEqual(tuple(red.samples[-3:]), (255, 255, 255))
+        self.assertEqual(tuple(green.samples[-3:]), (255, 255, 255))
 
 
 if __name__ == "__main__":
