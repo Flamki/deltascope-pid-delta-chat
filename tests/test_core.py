@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import fitz
 
+from app import aggregate_metrics
 from eval.run_eval import regression_failures
 from src.canonical import CanonicalDocument
 from src.chat import answer_question
@@ -248,6 +249,53 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue(_line_has_valid_citation("Want me to trace that tag across both revisions?", allowed))
         self.assertFalse(_line_has_valid_citation("Pressure changed.", allowed))
         self.assertFalse(_line_has_valid_citation("Pressure changed. [D-9999]", allowed))
+
+    def test_observability_separates_hosted_llm_usage_from_local_estimates(self):
+        traces = [
+            {
+                "request": "compare",
+                "status": "ok",
+                "duration_ms": 8000,
+                "spans": [],
+                "telemetry": {"model": "deterministic-delta-v2", "input_tokens": 0, "output_tokens": 0},
+            },
+            {
+                "request": "chat",
+                "status": "ok",
+                "duration_ms": 100,
+                "spans": [{"name": "retrieval", "attributes": {"hits": 3}}],
+                "telemetry": {
+                    "model": "local-grounded-synthesis-v3",
+                    "input_tokens": 20,
+                    "output_tokens": 10,
+                    "estimated_cost_usd": 0,
+                },
+            },
+            {
+                "request": "chat",
+                "status": "ok",
+                "duration_ms": 400,
+                "spans": [{"name": "retrieval", "attributes": {"hits": 2}}],
+                "telemetry": {
+                    "model": "fireworks:accounts/fireworks/models/gpt-oss-20b",
+                    "input_tokens": 100,
+                    "output_tokens": 25,
+                    "estimated_cost_usd": 0.0000145,
+                },
+            },
+        ]
+        metrics = aggregate_metrics(traces, {"modified": 1})
+        self.assertEqual(metrics["requests"], 3)
+        self.assertEqual(metrics["chat_requests"], 2)
+        self.assertEqual(metrics["retrieval_hits"], 5)
+        self.assertEqual(metrics["llm_calls"], 1)
+        self.assertEqual(metrics["input_tokens"], 100)
+        self.assertEqual(metrics["output_tokens"], 25)
+        self.assertEqual(metrics["local_input_token_estimate"], 20)
+        self.assertEqual(metrics["local_output_token_estimate"], 10)
+        self.assertEqual(metrics["estimated_cost_usd"], 0.0000145)
+        self.assertEqual(metrics["p95_latency_ms"], 8000)
+        self.assertEqual(metrics["delta_counts"], {"modified": 1})
 
     def test_citation_highlight_and_markup_are_real_pdf_overlays(self):
         router = AdapterRouter()

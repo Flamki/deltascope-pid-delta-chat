@@ -364,6 +364,80 @@ def attach_comparison_lineage(trace: dict, session_id: str):
         )
 
 
+def aggregate_metrics(traces: list[dict], delta_counts: dict | None = None) -> dict:
+    """Aggregate trace telemetry without presenting local estimates as LLM usage."""
+
+    durations = [max(0.0, float(trace.get("duration_ms", 0) or 0)) for trace in traces]
+    ordered_durations = sorted(durations)
+    p95_index = max(0, math.ceil(len(ordered_durations) * 0.95) - 1)
+    chat_traces = [trace for trace in traces if trace.get("request") == "chat"]
+    successful_chat_traces = [trace for trace in chat_traces if trace.get("status") == "ok"]
+
+    def is_hosted_llm_trace(trace: dict) -> bool:
+        model = str(trace.get("telemetry", {}).get("model", ""))
+        return model.startswith(("fireworks:", "openai-compatible:"))
+
+    hosted_llm_traces = [trace for trace in successful_chat_traces if is_hosted_llm_trace(trace)]
+    local_answer_traces = [trace for trace in successful_chat_traces if not is_hosted_llm_trace(trace)]
+    error_count = sum(trace.get("status") == "error" for trace in traces)
+    retrieval_hits = sum(
+        int(span.get("attributes", {}).get("hits", 0) or 0)
+        for trace in chat_traces
+        for span in trace.get("spans", [])
+        if span.get("name") == "retrieval"
+    )
+
+    return {
+        "requests": len(traces),
+        "successful_requests": len(traces) - error_count,
+        "chat_requests": len(chat_traces),
+        "avg_latency_ms": round(sum(durations) / len(durations), 2) if durations else 0,
+        "p95_latency_ms": round(ordered_durations[p95_index], 2) if ordered_durations else 0,
+        "errors": error_count,
+        "error_rate": round(error_count / len(traces), 4) if traces else 0,
+        "llm_calls": len(hosted_llm_traces),
+        "local_answers": len(local_answer_traces),
+        "provider_fallbacks": sum(
+            bool(trace.get("telemetry", {}).get("provider_error"))
+            for trace in chat_traces
+        ),
+        "retrieval_hits": retrieval_hits,
+        # Hosted calls only: local synthesis token estimates must never be
+        # presented as actual LLM usage.
+        "input_tokens": sum(
+            int(trace.get("telemetry", {}).get("input_tokens", 0) or 0)
+            for trace in hosted_llm_traces
+        ),
+        "output_tokens": sum(
+            int(trace.get("telemetry", {}).get("output_tokens", 0) or 0)
+            for trace in hosted_llm_traces
+        ),
+        "local_input_token_estimate": sum(
+            int(trace.get("telemetry", {}).get("input_tokens", 0) or 0)
+            for trace in local_answer_traces
+        ),
+        "local_output_token_estimate": sum(
+            int(trace.get("telemetry", {}).get("output_tokens", 0) or 0)
+            for trace in local_answer_traces
+        ),
+        "estimated_cost_usd": round(
+            sum(
+                float(trace.get("telemetry", {}).get("estimated_cost_usd", 0) or 0)
+                for trace in hosted_llm_traces
+            ),
+            8,
+        ),
+        "models": sorted(
+            {
+                str(trace.get("telemetry", {}).get("model"))
+                for trace in traces
+                if trace.get("telemetry", {}).get("model")
+            }
+        ),
+        "delta_counts": delta_counts or {},
+    }
+
+
 def restore_sessions(limit: int = 20) -> int:
     """Restore recent completed comparisons without re-running OCR or delta."""
 
@@ -774,32 +848,8 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/sessions/([^/]+)/metrics", path)
         if match:
             traces = TRACE_STORE.list(match.group(1))
-            durations = [trace.get("duration_ms", 0) for trace in traces]
-            return self.send_json(
-                {
-                    "requests": len(traces),
-                    "avg_latency_ms": round(sum(durations) / len(durations), 2) if durations else 0,
-                    "errors": sum(trace.get("status") == "error" for trace in traces),
-                    "llm_calls": sum(trace.get("request") == "chat" and trace.get("status") == "ok" for trace in traces),
-                    "retrieval_hits": sum(
-                        span.get("attributes", {}).get("hits", 0)
-                        for trace in traces
-                        for span in trace.get("spans", [])
-                        if span.get("name") == "retrieval"
-                    ),
-                    "input_tokens": sum(trace.get("telemetry", {}).get("input_tokens", 0) for trace in traces),
-                    "output_tokens": sum(trace.get("telemetry", {}).get("output_tokens", 0) for trace in traces),
-                    "estimated_cost_usd": sum(trace.get("telemetry", {}).get("estimated_cost_usd", 0) for trace in traces),
-                    "models": sorted(
-                        {
-                            trace.get("telemetry", {}).get("model")
-                            for trace in traces
-                            if trace.get("telemetry", {}).get("model")
-                        }
-                    ),
-                    "delta_counts": self.get_session(match.group(1)).report["counts"] if self.get_session(match.group(1)) else {},
-                }
-            )
+            session = self.get_session(match.group(1))
+            return self.send_json(aggregate_metrics(traces, session.report["counts"] if session else {}))
         return self.send_api_error("Not found.", 404)
 
     def serve_file(self, path: Path, content_type: str | None = None):

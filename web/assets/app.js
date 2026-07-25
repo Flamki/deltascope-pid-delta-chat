@@ -637,14 +637,25 @@ async function loadObservability() {
   ]);
   if (!metricsResponse.ok || !tracesResponse.ok) throw new Error("Telemetry is temporarily unavailable.");
   const [metrics, traceData] = await Promise.all([metricsResponse.json(), tracesResponse.json()]);
+  const formatLatency = milliseconds => (
+    Number(milliseconds) >= 1000
+      ? `${(Number(milliseconds) / 1000).toFixed(2)} s`
+      : `${Math.round(Number(milliseconds))} ms`
+  );
+  const formatCost = value => {
+    const cost = Number(value || 0);
+    if (cost === 0) return "$0.000000";
+    if (cost < 0.000001) return "<$0.000001";
+    return `$${cost.toFixed(6)}`;
+  };
   const cards = [
-    ["Requests", metrics.requests],
-    ["Avg latency", `${metrics.avg_latency_ms} ms`],
-    ["Retrieval hits", metrics.retrieval_hits],
-    ["LLM tokens", metrics.input_tokens + metrics.output_tokens],
-    ["Model cost", `$${Number(metrics.estimated_cost_usd).toFixed(4)}`]
+    { label: "Requests", value: metrics.requests, title: `${metrics.chat_requests} chat request(s), ${metrics.errors} error(s)` },
+    { label: "Avg latency", value: formatLatency(metrics.avg_latency_ms), title: `Mean end-to-end latency; p95 ${formatLatency(metrics.p95_latency_ms)}` },
+    { label: "Evidence hits", value: metrics.retrieval_hits, title: "Canonical evidence items returned across chat retrievals" },
+    { label: "LLM tokens", value: metrics.input_tokens + metrics.output_tokens, title: `${metrics.llm_calls} hosted LLM call(s); local token estimates are excluded` },
+    { label: "LLM cost", value: formatCost(metrics.estimated_cost_usd), title: "Estimated hosted-model cost from provider-reported token usage" }
   ];
-  $("#metric-grid").innerHTML = cards.map(([label, value]) => `<div class="metric-card"><span>${label}</span><b>${value}</b></div>`).join("");
+  $("#metric-grid").innerHTML = cards.map(card => `<div class="metric-card" title="${escapeHtml(card.title)}"><span>${card.label}</span><b>${card.value}</b></div>`).join("");
   $("#trace-list").innerHTML = traceData.traces.length
     ? traceData.traces.map(trace => `<div class="trace-row"><span>${escapeHtml(trace.request)} · ${trace.trace_id.slice(0, 8)}</span><span>${trace.spans.map(span => escapeHtml(span.name)).join(" → ")}</span><span>${trace.duration_ms} ms</span><span class="trace-status ${trace.status}">${trace.status}</span></div>`).join("")
     : '<div class="trace-row"><span>Telemetry unavailable</span><span>No persisted trace was found.</span><span>—</span><span class="trace-status error">missing</span></div>';
