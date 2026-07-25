@@ -126,6 +126,32 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(result["citations"], [])
         self.assertIn("don’t have enough evidence", result["answer"])
 
+    def test_chat_handles_a_greeting_without_a_false_refusal(self):
+        router = AdapterRouter()
+        base = router.ingest("PID-A", self.base_path)
+        revised = router.ingest("PID-B", self.revised_path)
+        report = compare_documents(base, revised)
+        result = answer_question("hey", [base, revised], report)
+        self.assertEqual(result["retrieval"]["method"], "conversation-intent")
+        self.assertEqual(result["retrieval_hits"], 0)
+        self.assertEqual(result["citations"], [])
+        self.assertTrue(result["answer"].startswith("Hey"))
+        self.assertNotIn("enough evidence", result["answer"].lower())
+
+    def test_chat_summarizes_one_document_with_only_that_files_citations(self):
+        router = AdapterRouter()
+        base = router.ingest("PID-A", self.base_path)
+        revised = router.ingest("PID-B", self.revised_path)
+        report = compare_documents(base, revised)
+        result = answer_question("summarize file a", [base, revised], report)
+        self.assertEqual(result["retrieval"]["method"], "document-summary-router")
+        self.assertEqual(result["retrieval"]["summary_source"], "PID-A")
+        self.assertGreater(result["retrieval_hits"], 0)
+        self.assertTrue(result["citations"])
+        self.assertTrue(all(citation["source"] == "PID-A" for citation in result["citations"]))
+        self.assertIn("file a summary", result["answer"].lower())
+        self.assertNotIn("enough evidence", result["answer"].lower())
+
     def test_selected_region_is_mapped_to_canonical_evidence(self):
         router = AdapterRouter()
         base = router.ingest("PID-A", self.base_path)

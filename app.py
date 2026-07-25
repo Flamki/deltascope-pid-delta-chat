@@ -845,6 +845,19 @@ class Handler(BaseHTTPRequestHandler):
         if match:
             traces = TRACE_STORE.list(match.group(1))
             return self.send_json({"traces": traces})
+        match = re.fullmatch(r"/api/sessions/([^/]+)/observability", path)
+        if match:
+            traces = TRACE_STORE.list(match.group(1))
+            session = self.get_session(match.group(1))
+            return self.send_json(
+                {
+                    "metrics": aggregate_metrics(
+                        traces,
+                        session.report["counts"] if session else {},
+                    ),
+                    "traces": traces,
+                }
+            )
         match = re.fullmatch(r"/api/sessions/([^/]+)/metrics", path)
         if match:
             traces = TRACE_STORE.list(match.group(1))

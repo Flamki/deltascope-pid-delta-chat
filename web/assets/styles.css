@@ -713,6 +713,17 @@ main{min-height:100vh}.screen{display:none;min-height:100vh}.screen.active{displ
 .message.user .bubble.with-attachment{padding:7px 7px 12px}
 .message.user .bubble.with-attachment>p{padding:0 7px}
 
+.metric-card.loading b,.loading-row span{
+  color:transparent;
+  border-radius:6px;
+  background:linear-gradient(100deg,rgba(213,224,238,.7) 25%,rgba(241,247,255,.95) 45%,rgba(213,224,238,.7) 65%);
+  background-size:220% 100%;
+  animation:telemetryShimmer 1.25s linear infinite;
+}
+.metric-card.loading b{display:block;width:54px;height:20px;margin-top:3px}
+.loading-row span{height:10px}
+@keyframes telemetryShimmer{to{background-position:-220% 0}}
+
 @media(max-width:560px){
   .selection-context{grid-template-columns:68px minmax(0,1fr) 22px}
   .selection-context>img{width:68px;height:46px}

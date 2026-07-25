@@ -26,6 +26,30 @@ ENGINEERING_SHORT_TERMS = {
     "tt",
 }
 
+DOCUMENT_SUMMARY_TERMS = ("summarize", "summary", "overview", "describe", "explain")
+DOCUMENT_SUMMARY_KEYWORDS = {
+    "alarm",
+    "compressor",
+    "control",
+    "cooling",
+    "design",
+    "discharge",
+    "flow",
+    "gas",
+    "instrument",
+    "leakage",
+    "lubrication",
+    "pressure",
+    "seal",
+    "service",
+    "setpoint",
+    "suction",
+    "system",
+    "trip",
+    "valve",
+    "vent",
+}
+
 
 def terms(text: str) -> list[str]:
     return [
@@ -47,6 +71,70 @@ def query_terms(text: str) -> list[str]:
     if "compressor" in present:
         values.append("ka")
     return values
+
+
+def greeting_response(question: str) -> str | None:
+    normalized = re.sub(r"\s+", " ", question.lower()).strip(" !?.")
+    if normalized in {"hi", "hey", "hello", "hello there", "hey there", "yo"}:
+        return (
+            "Hey — I’m ready. Ask me to summarize File A or File B, compare a tag or value, "
+            "explain the most important changes, or select an area on the drawing."
+        )
+    if normalized in {"thanks", "thank you", "thank you so much"}:
+        return "You’re welcome. I’m here if you want to inspect a change or trace something across both files."
+    return None
+
+
+def document_summary_source(question: str) -> str | None:
+    lowered = re.sub(r"[_-]+", " ", question.lower())
+    if not any(term in lowered for term in DOCUMENT_SUMMARY_TERMS):
+        return None
+    file_a = re.search(r"\b(?:file|pid)\s*a\b", lowered)
+    file_b = re.search(r"\b(?:file|pid)\s*b\b", lowered)
+    if file_a and not file_b:
+        return "PID-A"
+    if file_b and not file_a:
+        return "PID-B"
+    return None
+
+
+def document_summary_items(
+    documents: list[CanonicalDocument],
+    source: str,
+    top_k: int,
+) -> list[dict]:
+    document = next((item for item in documents if item.pid == source), None)
+    if document is None:
+        return []
+    seen: set[str] = set()
+    candidates: list[tuple[float, dict]] = []
+    for block in document.blocks:
+        text = re.sub(r"\s+", " ", block.text).strip()
+        normalized = text.lower()
+        if len(text) < 5 or normalized in seen:
+            continue
+        seen.add(normalized)
+        words = set(terms(text))
+        keyword_hits = len(words & DOCUMENT_SUMMARY_KEYWORDS)
+        tag_hits = len(re.findall(r"\b[A-Z]{1,5}[- ]?\d{2,5}[A-Z]?\b", text.upper()))
+        numeric_detail = 1 if re.search(r"\d", text) else 0
+        useful_length = min(len(text), 240) / 240
+        score = keyword_hits * 4 + tag_hits * 2 + numeric_detail + useful_length
+        candidates.append(
+            (
+                score,
+                {
+                    "kind": "document",
+                    "source": document.pid,
+                    "id": block.id,
+                    "page": block.page,
+                    "region": vars(block.region),
+                    "text": block.text,
+                },
+            )
+        )
+    candidates.sort(key=lambda value: (-value[0], value[1]["page"], value[1]["id"]))
+    return [item for _, item in candidates[:top_k]]
 
 
 def delta_item(finding: dict) -> dict:
@@ -191,6 +279,13 @@ def render_grounded_answer(
         for item in evidence:
             detail = naturalize_delta(item) if item["kind"] == "delta" else evidence_text(item)
             lines.append(f"• {detail} [{item['id']}]")
+        return "\n".join(lines)
+
+    if mode == "document_summary":
+        label = source_label(evidence[0]["source"])
+        lines.append(f"{label} summary, grounded in the drawing:")
+        for item in evidence:
+            lines.append(f"• {evidence_text(item)} [{item['id']}]")
         return "\n".join(lines)
 
     if delta_evidence:
@@ -354,6 +449,35 @@ def answer_question(
     history: list[dict] | None = None,
 ) -> dict:
     retrieval_started = time.perf_counter()
+    greeting = greeting_response(question)
+    if greeting:
+        retrieval_ms = round((time.perf_counter() - retrieval_started) * 1000, 2)
+        return {
+            "answer": greeting,
+            "citations": [],
+            "retrieval_hits": 0,
+            "grounded": True,
+            "provider": LOCAL_ANSWER_PROVIDER,
+            "prompt": question,
+            "input_tokens": len(terms(question)),
+            "output_tokens": len(terms(greeting)),
+            "estimated_cost_usd": 0,
+            "retrieval": {
+                "method": "conversation-intent",
+                "query": question,
+                "contextualized": False,
+                "corpus_size": 0,
+                "top_scores": [],
+                "score_by_id": {},
+            },
+            "stage_timings_ms": {
+                "retrieval": retrieval_ms,
+                "answer_draft": 0.0,
+                "llm": 0.0,
+                "answer": 0.0,
+            },
+        }
+
     corpus: list[dict] = []
     for document in documents:
         for block in document.blocks:
@@ -372,7 +496,8 @@ def answer_question(
 
     top_k = max(1, int(os.getenv("RETRIEVAL_TOP_K", "6")))
     region_items = selected_region_items(documents, selection)
-    retrieval_query = contextualize_question(question, history)
+    summary_source = document_summary_source(question)
+    retrieval_query = question if summary_source else contextualize_question(question, history)
     if selection and region_items:
         retrieval_query = f"{retrieval_query} {' '.join(item['text'] for item in region_items[:4])}"
     scored, retrieval = bm25_rank(retrieval_query, corpus)
@@ -432,6 +557,15 @@ def answer_question(
             retrieval["method"] = "region+okapi-bm25"
             retrieval["selection_hits"] = len(region_items)
             retrieval["selection"] = selection
+    elif summary_source:
+        selected = document_summary_items(documents, summary_source, top_k)
+        mode = "document_summary"
+        retrieval["method"] = "document-summary-router"
+        retrieval["summary_source"] = summary_source
+        retrieval["score_by_id"] = {
+            item["id"]: retrieval["score_by_id"].get(item["id"], 0)
+            for item in selected
+        }
     elif (
         "only in file b" in lower
         or "only in pid-b" in lower

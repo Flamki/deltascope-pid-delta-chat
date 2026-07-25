@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 
@@ -158,7 +159,13 @@ class DurableStore:
             return []
         prefix = f"sessions/{session_id}/traces/"
         paths = sorted(self.list_paths(prefix, limit=1000))[-limit:]
-        traces = [self.get_json(path) for path in paths]
+        if not paths:
+            return []
+        # Blob reads are independent network requests. A small bounded pool
+        # keeps the Activity modal responsive without creating an unbounded
+        # connection burst for long sessions.
+        with ThreadPoolExecutor(max_workers=min(8, len(paths))) as executor:
+            traces = list(executor.map(self.get_json, paths))
         return [trace for trace in traces if trace is not None]
 
 

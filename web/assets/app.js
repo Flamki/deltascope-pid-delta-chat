@@ -631,12 +631,21 @@ $$(".starter-questions button").forEach(button => button.addEventListener("click
 }));
 
 async function loadObservability() {
-  const [metricsResponse, tracesResponse] = await Promise.all([
-    fetch(`/api/sessions/${state.session.id}/metrics`),
-    fetch(`/api/sessions/${state.session.id}/traces`)
-  ]);
-  if (!metricsResponse.ok || !tracesResponse.ok) throw new Error("Telemetry is temporarily unavailable.");
-  const [metrics, traceData] = await Promise.all([metricsResponse.json(), tracesResponse.json()]);
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 15000);
+  let response;
+  try {
+    response = await fetch(
+      `/api/sessions/${state.session.id}/observability`,
+      { signal: controller.signal }
+    );
+  } finally {
+    window.clearTimeout(timeout);
+  }
+  if (!response.ok) throw new Error("Telemetry is temporarily unavailable.");
+  const payload = await response.json();
+  const metrics = payload.metrics;
+  const traceData = { traces: payload.traces || [] };
   const formatLatency = milliseconds => (
     Number(milliseconds) >= 1000
       ? `${(Number(milliseconds) / 1000).toFixed(2)} s`
@@ -661,14 +670,34 @@ async function loadObservability() {
     : '<div class="trace-row"><span>Telemetry unavailable</span><span>No persisted trace was found.</span><span>—</span><span class="trace-status error">missing</span></div>';
 }
 
+let observabilityLoadPromise = null;
+
+function showObservabilityLoading() {
+  $("#observability-dialog").setAttribute("aria-busy", "true");
+  $("#metric-grid").innerHTML = ["Requests", "Avg latency", "Evidence hits", "LLM tokens", "LLM cost"]
+    .map(label => `<div class="metric-card loading"><span>${label}</span><b>—</b></div>`)
+    .join("");
+  $("#trace-list").innerHTML = '<div class="trace-row loading-row"><span>Loading activity…</span><span>Reading persisted traces</span><span>—</span><span></span></div>';
+}
+
 async function openObservability() {
+  const dialog = $("#observability-dialog");
+  if (!dialog.open) dialog.showModal();
+  if (observabilityLoadPromise) return;
+  showObservabilityLoading();
+  observabilityLoadPromise = loadObservability();
   try {
-    await loadObservability();
+    await observabilityLoadPromise;
   } catch (error) {
+    const message = error.name === "AbortError"
+      ? "Telemetry took too long to respond. Close and try again."
+      : error.message;
+    error.message = message;
     $("#metric-grid").innerHTML = '<div class="metric-card"><span>Status</span><b>Unavailable</b></div>';
     $("#trace-list").innerHTML = `<div class="trace-row"><span>Telemetry error</span><span>${escapeHtml(error.message)}</span><span>—</span><span class="trace-status error">error</span></div>`;
   }
-  $("#observability-dialog").showModal();
+  dialog.setAttribute("aria-busy", "false");
+  observabilityLoadPromise = null;
 }
 
 $("#observability-button").addEventListener("click", openObservability);
