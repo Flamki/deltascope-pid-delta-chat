@@ -456,12 +456,21 @@ class Handler(BaseHTTPRequestHandler):
             )
         )
 
-    def send_bytes(self, content: bytes, content_type: str, status: int = 200, disposition: str | None = None):
+    def send_bytes(
+        self,
+        content: bytes,
+        content_type: str,
+        status: int = 200,
+        disposition: str | None = None,
+        cache_control: str | None = None,
+    ):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(content)))
         self.send_header("X-Request-ID", self.request_id())
         self.send_header("X-Content-Type-Options", "nosniff")
+        if cache_control:
+            self.send_header("Cache-Control", cache_control)
         if disposition:
             self.send_header("Content-Disposition", disposition)
         self.end_headers()
@@ -695,7 +704,11 @@ class Handler(BaseHTTPRequestHandler):
                 if ink_color:
                     pixmap = colorize_ink(pixmap, ink_color)
                 content = pixmap.tobytes("png")
-            return self.send_bytes(content, "image/png")
+            return self.send_bytes(
+                content,
+                "image/png",
+                cache_control="private, max-age=86400, immutable",
+            )
         match = re.fullmatch(r"/api/sessions/([^/]+)/documents/(PID-A|PID-B)/view\.svg", path)
         if match:
             session = self.get_session(match.group(1))
@@ -717,6 +730,7 @@ class Handler(BaseHTTPRequestHandler):
                 create_dwg_svg(document, block_id or None, page),
                 "image/svg+xml; charset=utf-8",
                 disposition=f'inline; filename="{pid.lower()}-drawing.svg"',
+                cache_control="private, max-age=86400, immutable",
             )
         match = re.fullmatch(r"/api/sessions/([^/]+)/documents/(PID-A|PID-B)/highlight", path)
         if match:

@@ -505,10 +505,13 @@ main{min-height:100vh}.screen{display:none;min-height:100vh}.screen.active{displ
   display:block;
   width:100%;
   height:auto;
+  opacity:1;
   pointer-events:none;
   user-select:none;
   -webkit-user-drag:none;
+  transition:opacity .12s ease;
 }
+.document-page.render-pending>img{opacity:0}
 .document-page>.overlay-image{
   position:absolute;
   z-index:2;

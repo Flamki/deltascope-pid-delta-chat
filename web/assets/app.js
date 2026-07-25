@@ -10,8 +10,10 @@ const state = {
   chatHistory: [],
   chatPending: false,
   filter: "all",
-  maxFileBytes: 75 * 1024 * 1024
+  maxFileBytes: 75 * 1024 * 1024,
+  drawingRenderGeneration: 0
 };
+const drawingAssetPromises = new Map();
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const screens = ["upload-screen", "analysis-screen", "workspace-screen"];
@@ -29,6 +31,11 @@ function escapeHtml(value = "") {
   return String(value).replace(/[&<>"']/g, character => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
   })[character]);
+}
+
+function resetDrawingAssetCache() {
+  state.drawingRenderGeneration += 1;
+  drawingAssetPromises.clear();
 }
 
 function setFile(slot, file) {
@@ -117,6 +124,7 @@ $("#upload-form").addEventListener("submit", async event => {
     if (!response.ok) throw new Error(payload.error || "Comparison failed.");
     state.session = payload;
     state.chatHistory = [];
+    resetDrawingAssetCache();
     localStorage.setItem("deltascope-session-id", payload.id);
     localStorage.removeItem("deltascope-skip-restore");
     stopAnimation();
@@ -196,6 +204,76 @@ function drawingUrl(pid, page, highlightBlockId = "", inkColor = "") {
   return `/api/sessions/${state.session.id}/documents/${pid}/render.png?${query}`;
 }
 
+function loadDrawingAsset(url) {
+  if (drawingAssetPromises.has(url)) return drawingAssetPromises.get(url);
+  const promise = new Promise((resolve, reject) => {
+    const image = new Image();
+    image.decoding = "async";
+    image.onload = async () => {
+      try {
+        await image.decode();
+      } catch {
+        // A completed load is still safe to display when decode() is unavailable.
+      }
+      resolve(url);
+    };
+    image.onerror = () => reject(new Error("Drawing could not be rendered."));
+    image.src = url;
+  }).catch(error => {
+    drawingAssetPromises.delete(url);
+    throw error;
+  });
+  drawingAssetPromises.set(url, promise);
+  return promise;
+}
+
+function warmDrawingPage(page) {
+  if (!state.session) return Promise.resolve([]);
+  const documents = state.session.documents;
+  const urls = [];
+  ["PID-A", "PID-B"].forEach(pid => {
+    const document = documents[pid];
+    if (page > documentPageCount(pid)) return;
+    if (document.format === "dwg" && !document.metadata.geometry_available) return;
+    urls.push(drawingUrl(pid, page));
+  });
+  if (
+    page <= Math.min(documentPageCount("PID-A"), documentPageCount("PID-B"))
+    && !$(".overlay-tab").disabled
+  ) {
+    urls.push(drawingUrl("PID-A", page, "", "red"));
+    urls.push(drawingUrl("PID-B", page, "", "green"));
+  }
+  return Promise.allSettled([...new Set(urls)].map(loadDrawingAsset));
+}
+
+function setViewerLoading(message) {
+  $("#viewer-loading span").textContent = message;
+  $("#viewer-loading").classList.remove("hidden");
+  $("#document-page").classList.add("render-pending");
+}
+
+function setViewerReady() {
+  $("#viewer-loading").classList.add("hidden");
+  $("#document-page").classList.remove("render-pending");
+}
+
+async function displayDrawingAsset(element, url) {
+  element.src = url;
+  if (!element.complete) {
+    await new Promise((resolve, reject) => {
+      element.addEventListener("load", resolve, { once: true });
+      element.addEventListener("error", () => reject(new Error("Drawing could not be displayed.")), { once: true });
+    });
+  }
+  if (!element.naturalWidth) throw new Error("Drawing could not be displayed.");
+  try {
+    await element.decode();
+  } catch {
+    // Some browsers reject decode() after an otherwise successful image load.
+  }
+}
+
 function selectionPreviewUrl(selection) {
   const document = state.session.documents[selection.source];
   if (document.format === "dwg") {
@@ -226,7 +304,8 @@ function setSelectionMode(enabled) {
   if (!enabled) clearCanvasSelection();
 }
 
-function renderDrawing(highlightBlockId = "") {
+async function renderDrawing(highlightBlockId = "") {
+  const renderGeneration = ++state.drawingRenderGeneration;
   const tab = state.activeTab;
   const isOverlay = tab === "OVERLAY";
   const primaryPid = isOverlay ? "PID-A" : tab;
@@ -240,7 +319,7 @@ function renderDrawing(highlightBlockId = "") {
   $("#next-page").disabled = state.viewPage >= pageCount;
   $("#overlay-control").classList.toggle("hidden", !isOverlay);
   $("#selection-source-wrap").classList.toggle("hidden", !isOverlay);
-  $("#viewer-image-overlay").classList.toggle("hidden", !isOverlay);
+  $("#viewer-image-overlay").classList.add("hidden");
   $("#document-page").style.width = `${state.zoom * 100}%`;
   $("#zoom-label").textContent = state.zoom === 1 ? "Fit" : `${Math.round(state.zoom * 100)}%`;
   clearCanvasSelection();
@@ -252,18 +331,42 @@ function renderDrawing(highlightBlockId = "") {
 
   const primary = $("#viewer-image-primary");
   const overlay = $("#viewer-image-overlay");
-  $("#viewer-loading span").textContent = "Rendering drawing";
-  $("#viewer-loading").classList.remove("hidden");
-  primary.onload = () => $("#viewer-loading").classList.add("hidden");
-  primary.onerror = () => {
-    $("#viewer-loading span").textContent = "Drawing could not be rendered";
-  };
-  primary.src = drawingUrl(primaryPid, state.viewPage, highlightBlockId, isOverlay ? "red" : "");
-  if (isOverlay) {
-    overlay.src = drawingUrl("PID-B", state.viewPage, "", "green");
+  const primaryUrl = drawingUrl(primaryPid, state.viewPage, highlightBlockId, isOverlay ? "red" : "");
+  const overlayUrl = isOverlay ? drawingUrl("PID-B", state.viewPage, "", "green") : "";
+  setViewerLoading(isOverlay ? "Preparing both revision layers" : "Rendering drawing");
+
+  try {
+    const requiredAssets = [loadDrawingAsset(primaryUrl)];
+    if (overlayUrl) requiredAssets.push(loadDrawingAsset(overlayUrl));
+    await Promise.all(requiredAssets);
+    if (renderGeneration !== state.drawingRenderGeneration) return;
+
+    const displayedAssets = [displayDrawingAsset(primary, primaryUrl)];
+    if (overlayUrl) {
+      displayedAssets.push(displayDrawingAsset(overlay, overlayUrl));
+      overlay.alt = "File B revision layer";
+      primary.alt = "File A revision layer";
+    } else {
+      overlay.removeAttribute("src");
+      primary.alt = primaryPid === "PID-A" ? "File A engineering drawing" : "File B engineering drawing";
+    }
+    await Promise.all(displayedAssets);
+    if (renderGeneration !== state.drawingRenderGeneration) return;
+
+    if (overlayUrl) overlay.classList.remove("hidden");
     overlay.style.opacity = String(Number($("#overlay-opacity").value) / 100);
-  } else {
-    overlay.removeAttribute("src");
+    setViewerReady();
+
+    // Warm both standalone views and the complete overlay only after the
+    // foreground drawing is ready. Tab order must never determine readiness.
+    void warmDrawingPage(state.viewPage);
+    const sharedPageCount = Math.min(documentPageCount("PID-A"), documentPageCount("PID-B"));
+    if (state.viewPage < sharedPageCount) {
+      window.setTimeout(() => void warmDrawingPage(state.viewPage + 1), 250);
+    }
+  } catch (error) {
+    if (renderGeneration !== state.drawingRenderGeneration) return;
+    $("#viewer-loading span").textContent = error.message || "Drawing could not be rendered";
   }
 }
 
@@ -275,7 +378,10 @@ function switchDocument(tab, page = 1, highlightBlockId = "") {
   $("#delta-viewer").classList.toggle("hidden", tab !== "DELTA");
   $("#drawing-viewer").classList.toggle("hidden", tab === "DELTA");
   $("#dwg-viewer").classList.add("hidden");
-  if (tab === "DELTA") return;
+  if (tab === "DELTA") {
+    state.drawingRenderGeneration += 1;
+    return;
+  }
   renderDrawing(highlightBlockId);
 }
 
@@ -579,6 +685,7 @@ $("#sidebar-export").addEventListener("click", event => {
 });
 
 function resetComparison() {
+  resetDrawingAssetCache();
   state.session = null;
   state.files = { a: null, b: null };
   state.activeTab = "PID-A";
@@ -607,6 +714,7 @@ async function restoreLatestComparison() {
     const response = await fetch(endpoint);
     if (!response.ok) return;
     state.session = await response.json();
+    resetDrawingAssetCache();
     localStorage.setItem("deltascope-session-id", state.session.id);
     renderWorkspace();
     showScreen("workspace-screen");
